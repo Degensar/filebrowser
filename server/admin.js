@@ -13,7 +13,7 @@ import {
   findUser,
   removeRoleFromAllUsers,
 } from './users.js';
-import { listRoles, addRole, setRoleFolders, removeRole, findRole } from './roles.js';
+import { listRoles, addRole, updateRole, removeRole, findRole } from './roles.js';
 
 export const adminRouter = express.Router();
 adminRouter.use(requireAuth, requireAdmin);
@@ -86,22 +86,21 @@ adminRouter.get('/roles', (req, res) => {
 });
 
 adminRouter.post('/roles', (req, res) => {
-  const { name, folders } = req.body || {};
+  const { name, folders, canEdit } = req.body || {};
   try {
-    const created = addRole(name, Array.isArray(folders) ? folders : []);
+    const created = addRole(name, Array.isArray(folders) ? folders : [], !!canEdit);
     res.json({ ok: true, role: findRole(created) });
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
 });
 
-adminRouter.put('/roles/:name/folders', (req, res) => {
-  const { folders } = req.body || {};
-  if (!Array.isArray(folders))
-    return res.status(400).json({ error: 'folders 必须是一个数组。' });
+// Update a role's folders and/or its edit capability.
+adminRouter.put('/roles/:name', (req, res) => {
+  const { folders, canEdit } = req.body || {};
   try {
-    const saved = setRoleFolders(req.params.name, folders);
-    res.json({ ok: true, folders: saved });
+    const role = updateRole(req.params.name, { folders, canEdit });
+    res.json({ ok: true, role });
   } catch (e) {
     res.status(400).json({ error: e.message });
   }

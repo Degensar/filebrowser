@@ -11,8 +11,9 @@ import {
   setUserRoles,
   setExtraFolders,
   describeAccess,
+  describeWrite,
 } from '../server/users.js';
-import { normFolders } from '../server/paths.js';
+import { normRoot } from '../server/paths.js';
 
 function prompt(question, { hidden = false } = {}) {
   return new Promise((resolve) => {
@@ -42,7 +43,7 @@ async function getPassword(provided) {
   return pw;
 }
 
-const [, , cmd, username, arg3] = process.argv;
+const [, , cmd, username, arg3, arg4] = process.argv;
 
 // Re-read a user or throw a friendly error.
 function getUser(name) {
@@ -103,29 +104,41 @@ try {
       break;
     }
     case 'grant': {
-      // Add an extra individual folder. Use "/" to grant the whole share.
-      if (!username || !arg3) throw new Error('用法：npm run user grant <用户名> <文件夹>');
+      // Add an extra individual folder. Add "edit" to also allow editing it.
+      //   npm run user grant <用户名> <文件夹> [edit]
+      if (!username || !arg3) throw new Error('用法：npm run user grant <用户名> <文件夹> [edit]');
       const user = getUser(username);
-      setExtraFolders(username, normFolders([...user.extraFolders, arg3]));
-      console.log(`✓ 已为“${user.username}”授予文件夹“${arg3}”。当前可访问：${describeAccess(getUser(username))}`);
+      const path = normRoot(arg3);
+      const write = arg4 === 'edit';
+      const next = [...user.extraFolders.filter((f) => f.path !== path), { path, write }];
+      setExtraFolders(username, next);
+      const u2 = getUser(username);
+      console.log(
+        `✓ 已为“${u2.username}”授予文件夹“${path}”（${write ? '可编辑' : '只读'}）。\n` +
+          `  可访问：${describeAccess(u2)}\n  可编辑：${describeWrite(u2)}`
+      );
       break;
     }
     case 'revoke': {
       if (!username || !arg3) throw new Error('用法：npm run user revoke <用户名> <文件夹>');
       const user = getUser(username);
-      const folder = normFolders([arg3])[0];
-      setExtraFolders(username, user.extraFolders.filter((f) => f !== folder));
-      console.log(`✓ 已撤销“${user.username}”的文件夹“${folder}”。当前可访问：${describeAccess(getUser(username))}`);
+      const path = normRoot(arg3);
+      setExtraFolders(username, user.extraFolders.filter((f) => f.path !== path));
+      console.log(`✓ 已撤销“${user.username}”的文件夹“${path}”。当前可访问：${describeAccess(getUser(username))}`);
       break;
     }
     case 'access': {
       if (!username) throw new Error('用法：npm run user access <用户名>');
       const user = getUser(username);
+      const extra = user.extraFolders.length
+        ? user.extraFolders.map((f) => `${f.path}${f.write ? '(可编辑)' : ''}`).join('  ')
+        : '（无）';
       console.log(`用户“${user.username}”：`);
       console.log(`  管理员：${user.admin ? '是' : '否'}`);
       console.log(`  角色：${user.roleNames.length ? user.roleNames.join('、') : '（无）'}`);
-      console.log(`  额外文件夹：${user.extraFolders.length ? user.extraFolders.join('  ') : '（无）'}`);
+      console.log(`  额外文件夹：${extra}`);
       console.log(`  有效访问：${describeAccess(user)}`);
+      console.log(`  编辑权限：${describeWrite(user)}`);
       break;
     }
     case 'list':
@@ -156,7 +169,7 @@ try {
       console.log('  角色与文件夹分配：');
       console.log('  npm run user assign-role <用户名> <角色名>   给用户分配一个角色');
       console.log('  npm run user unassign-role <用户名> <角色名> 移除用户的某个角色');
-      console.log('  npm run user grant <用户名> <文件夹>         额外授予某个文件夹（用 / 表示整个共享）');
+      console.log('  npm run user grant <用户名> <文件夹> [edit]  额外授予某文件夹（加 edit 允许编辑）');
       console.log('  npm run user revoke <用户名> <文件夹>        撤销某个额外文件夹');
       console.log('');
       console.log('  角色本身用：npm run role  管理（创建/编辑/删除角色）');

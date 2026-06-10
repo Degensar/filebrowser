@@ -15,8 +15,25 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import bcrypt from 'bcryptjs';
-import { normFolders } from './paths.js';
+import { normFolders, normRoot } from './paths.js';
 import { rolesMap } from './roles.js';
+
+// Normalize a user's extra folders to a list of { path, write } objects.
+// Accepts legacy string[] (read-only) or already-object form. De-dupes by path
+// (a path is writable if any entry for it is writable).
+export function normExtra(folders) {
+  if (!Array.isArray(folders)) return [];
+  const byPath = new Map();
+  for (const f of folders) {
+    const path = normRoot(typeof f === 'string' ? f : f?.path);
+    if (!path) continue;
+    const write = typeof f === 'object' && !!f.write;
+    byPath.set(path, byPath.get(path) || write);
+  }
+  return [...byPath.entries()]
+    .map(([path, write]) => ({ path, write }))
+    .sort((a, b) => a.path.localeCompare(b.path));
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, '..', 'data');
@@ -31,9 +48,12 @@ function ensureStore() {
 function migrate(u) {
   if (u.admin === undefined) u.admin = u.role === 'admin';
   if (!Array.isArray(u.roleNames)) u.roleNames = [];
-  if (!Array.isArray(u.extraFolders)) {
-    // Older versions stored a single "roots" list directly on the user.
-    u.extraFolders = Array.isArray(u.roots) ? normFolders(u.roots) : [];
+  if (u.extraFolders === undefined) {
+    // Oldest versions stored a single "roots" list directly on the user.
+    u.extraFolders = normExtra(Array.isArray(u.roots) ? u.roots : []);
+  } else {
+    // Normalize legacy string[] extra folders to { path, write } objects.
+    u.extraFolders = normExtra(u.extraFolders);
   }
   delete u.role;
   delete u.roots;
@@ -61,7 +81,7 @@ export function findUser(username) {
 
 export const isAdmin = (user) => !!user && user.admin === true;
 
-// The effective set of allowed folders for a user, as normalized roots.
+// The effective set of READABLE folders for a user, as normalized roots.
 // Admins get the whole share. Otherwise: union of role folders + extra folders.
 export function effectiveRoots(user) {
   if (!user) return [];
@@ -72,17 +92,42 @@ export function effectiveRoots(user) {
     const role = map[rn];
     if (role) all.push(...role.folders);
   }
-  all.push(...(user.extraFolders || []));
+  for (const f of user.extraFolders || []) all.push(f.path);
   return normFolders(all); // collapses to ["/"] if any entry is the whole share
 }
 
-// Human-readable access summary (Chinese) for CLI / admin display.
+// The effective set of WRITABLE folders (upload / replace / delete).
+// Comes from edit-enabled roles and from extra folders marked writable.
+// Always a subset of effectiveRoots.
+export function effectiveWriteRoots(user) {
+  if (!user) return [];
+  if (user.admin) return ['/'];
+  const map = rolesMap();
+  const all = [];
+  for (const rn of user.roleNames || []) {
+    const role = map[rn];
+    if (role && role.canEdit) all.push(...role.folders);
+  }
+  for (const f of user.extraFolders || []) if (f.write) all.push(f.path);
+  return normFolders(all);
+}
+
+// Human-readable read-access summary (Chinese) for CLI / admin display.
 export function describeAccess(user) {
   if (user.admin) return '全部访问（管理员）';
   const roots = effectiveRoots(user);
   if (roots.includes('/')) return '全部访问';
   if (roots.length === 0) return '无访问权限';
   return roots.join('  ');
+}
+
+// Human-readable write-access summary.
+export function describeWrite(user) {
+  if (user.admin) return '可编辑全部（管理员）';
+  const roots = effectiveWriteRoots(user);
+  if (roots.includes('/')) return '可编辑全部';
+  if (roots.length === 0) return '只读';
+  return '可编辑：' + roots.join('  ');
 }
 
 // Strip the password hash before sending a user to the client.
@@ -93,7 +138,9 @@ export function publicUser(u) {
     roleNames: u.roleNames || [],
     extraFolders: u.extraFolders || [],
     effective: effectiveRoots(u),
+    effectiveWrite: effectiveWriteRoots(u),
     access: describeAccess(u),
+    writeAccess: describeWrite(u),
     createdAt: u.createdAt,
   };
 }
@@ -113,7 +160,7 @@ export function addUser(username, password, opts = {}) {
     passwordHash: bcrypt.hashSync(password, 10),
     admin: !!admin,
     roleNames: Array.isArray(roleNames) ? [...new Set(roleNames)] : [],
-    extraFolders: normFolders(extraFolders),
+    extraFolders: normExtra(extraFolders),
     createdAt: new Date().toISOString(),
   });
   saveUsers(users);
@@ -160,7 +207,7 @@ export function setUserRoles(username, roleNames) {
 
 export function setExtraFolders(username, folders) {
   return updateUser(username, (user) => {
-    user.extraFolders = normFolders(folders);
+    user.extraFolders = normExtra(folders);
   });
 }
 

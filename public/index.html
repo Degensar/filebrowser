@@ -51,6 +51,12 @@
       <nav class="breadcrumb" id="breadcrumb"></nav>
 
       <main class="content">
+        <div id="toolbar" class="toolbar hidden">
+          <input id="file-input" type="file" multiple hidden />
+          <button id="upload-btn" class="btn-primary">⬆ 上传文件</button>
+          <button id="mkdir-btn" class="btn-ghost">＋ 新建文件夹</button>
+          <span id="upload-status" class="upload-status"></span>
+        </div>
         <div id="loading" class="state hidden">加载中…</div>
         <div id="error" class="state error hidden"></div>
         <div id="empty" class="state hidden">此文件夹为空。</div>

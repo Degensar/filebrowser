@@ -118,12 +118,17 @@ async function navigate(path) {
   state.path = path;
   $('search').value = '';
   setState('loading');
+  $('toolbar').classList.add('hidden');
   try {
     const data = await api(`/api/files?path=${encodeURIComponent(path)}`);
     state.path = data.path;
     state.entries = data.entries;
+    state.canWrite = !!data.canWrite;
     renderBreadcrumb(data.breadcrumb);
     renderList(data.entries);
+    // Show the upload toolbar only where the user may edit (never at virtual home).
+    $('toolbar').classList.toggle('hidden', !(state.canWrite && data.path !== '/'));
+    $('upload-status').textContent = '';
   } catch (err) {
     showError(err.message);
   }
@@ -216,10 +221,106 @@ function renderList(entries) {
       a.innerHTML = '⬇ 下载';
       actTd.appendChild(a);
     }
+    if (state.canWrite) {
+      if (entry.type === 'file') {
+        actTd.appendChild(mkBtn('替换', 'btn-mini', () => replaceFile(entry)));
+      }
+      actTd.appendChild(mkBtn('删除', 'btn-mini btn-danger', () => deleteEntry(entry)));
+    }
 
     tr.append(nameTd, sizeTd, dateTd, actTd);
     tbody.appendChild(tr);
   }
+}
+
+// ---------- Write operations in the file browser ----------
+$('upload-btn').addEventListener('click', () => $('file-input').click());
+$('file-input').addEventListener('change', async (e) => {
+  const files = [...e.target.files];
+  e.target.value = ''; // allow re-selecting the same file later
+  if (files.length) await uploadFiles(files);
+});
+$('mkdir-btn').addEventListener('click', createFolder);
+
+async function uploadFiles(files) {
+  const status = $('upload-status');
+  let done = 0;
+  for (const file of files) {
+    status.textContent = `正在上传 ${file.name}（${++done}/${files.length}）…`;
+    const dest = joinPath(state.path, file.name);
+    try {
+      await fetch(`/api/file?path=${encodeURIComponent(dest)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: file,
+      }).then(checkOk);
+    } catch (err) {
+      status.textContent = '';
+      alert(`上传“${file.name}”失败：${err.message}`);
+      break;
+    }
+  }
+  status.textContent = done ? `已上传 ${done} 个文件。` : '';
+  await navigate(state.path);
+}
+
+// Replace one existing file with a newly chosen file (overwrites in place).
+function replaceFile(entry) {
+  const input = el('input', { type: 'file' });
+  input.addEventListener('change', async () => {
+    const file = input.files[0];
+    if (!file) return;
+    if (!confirm(`用所选文件覆盖“${entry.name}”？原文件将被替换。`)) return;
+    try {
+      await fetch(`/api/file?path=${encodeURIComponent(entry.path)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: file,
+      }).then(checkOk);
+      await navigate(state.path);
+    } catch (err) {
+      alert(`替换失败：${err.message}`);
+    }
+  });
+  input.click();
+}
+
+async function deleteEntry(entry) {
+  const what = entry.type === 'dir' ? '文件夹（及其全部内容）' : '文件';
+  if (!confirm(`确定要删除${what}“${entry.name}”吗？此操作不可撤销。`)) return;
+  try {
+    await api(`/api/file?path=${encodeURIComponent(entry.path)}`, { method: 'DELETE' });
+    await navigate(state.path);
+  } catch (err) {
+    alert(`删除失败：${err.message}`);
+  }
+}
+
+async function createFolder() {
+  const name = prompt('请输入新文件夹的名称：');
+  if (!name) return;
+  try {
+    await api(`/api/folder?path=${encodeURIComponent(joinPath(state.path, name))}`, { method: 'POST' });
+    await navigate(state.path);
+  } catch (err) {
+    alert(`创建失败：${err.message}`);
+  }
+}
+
+// fetch() doesn't throw on HTTP errors; surface the server's message.
+async function checkOk(res) {
+  if (res.ok) return res;
+  let msg = `请求失败（${res.status}）`;
+  try {
+    msg = (await res.json()).error || msg;
+  } catch {
+    /* ignore */
+  }
+  throw new Error(msg);
+}
+
+function joinPath(dir, name) {
+  return (dir === '/' ? '' : dir) + '/' + name;
 }
 
 $('search').addEventListener('input', (e) => {
@@ -285,7 +386,8 @@ function renderRoles(roles) {
   }
   for (const r of roles) {
     const tr = document.createElement('tr');
-    const nameTd = el('td', { className: 'admin-username', textContent: r.name });
+    const nameTd = el('td', { className: 'admin-username' }, el('span', { textContent: r.name }));
+    if (r.canEdit) nameTd.append(el('span', { className: 'edit-badge', textContent: '可编辑' }));
     const foldersTd = el('td', { className: 'admin-access', textContent: r.folders.length ? r.folders.join('  ') : '（未指定文件夹）' });
     const actTd = el('td', { className: 'col-admin-actions' });
     actTd.append(
@@ -383,10 +485,11 @@ function el(tag, props = {}, ...children) {
   return node;
 }
 
-// A reusable editor for a list of folders (chips + a "browse & add" button).
-// Returns { element, getFolders }.
+// A reusable editor for a list of folders, each with a "writable" toggle.
+// `initial` is an array of { path, write }. Returns { element, getFolders }
+// where getFolders() yields the same shape.
 function makeFolderEditor(initial = []) {
-  let folders = [...initial];
+  let folders = initial.map((f) => ({ path: f.path, write: !!f.write }));
   const box = el('div', { className: 'folder-list' });
 
   function render() {
@@ -395,29 +498,35 @@ function makeFolderEditor(initial = []) {
       box.append(el('div', { className: 'folder-empty', textContent: '尚未添加任何文件夹。' }));
     }
     for (const f of folders) {
-      const chip = el('div', { className: 'folder-chip' },
-        el('span', { className: 'folder-chip-icon', textContent: '📁' }),
-        el('span', { className: 'folder-chip-path', textContent: f })
-      );
+      const writeCb = el('input', { type: 'checkbox', checked: f.write });
+      writeCb.addEventListener('change', () => { f.write = writeCb.checked; });
+      const editToggle = el('label', { className: 'chip-edit', title: '允许在此文件夹中上传/替换/删除' },
+        writeCb, el('span', { textContent: '可编辑' }));
+
       const rm = el('button', { className: 'folder-chip-remove', textContent: '✕' });
       rm.addEventListener('click', () => {
         folders = folders.filter((x) => x !== f);
         render();
       });
-      chip.append(rm);
-      box.append(chip);
+
+      box.append(el('div', { className: 'folder-chip' },
+        el('span', { className: 'folder-chip-icon', textContent: '📁' }),
+        el('span', { className: 'folder-chip-path', textContent: f.path }),
+        editToggle,
+        rm
+      ));
     }
   }
   const addBtn = el('button', { className: 'btn-mini', textContent: '+ 浏览并添加文件夹' });
   addBtn.addEventListener('click', () => {
     openFolderPicker((picked) => {
-      if (!folders.includes(picked)) folders.push(picked);
+      if (!folders.some((f) => f.path === picked)) folders.push({ path: picked, write: false });
       render();
     });
   });
   render();
   const element = el('div', { className: 'restricted-section' }, box, addBtn);
-  return { element, getFolders: () => folders };
+  return { element, getFolders: () => folders.map((f) => ({ path: f.path, write: f.write })) };
 }
 
 // A reusable list of role checkboxes. Returns { element, getSelected }.
@@ -432,9 +541,11 @@ function makeRoleChecklist(selected = []) {
     const cb = el('input', { type: 'checkbox', checked: selected.includes(r.name) });
     cb.value = r.name;
     boxes.push(cb);
+    const nameRow = el('span', { className: 'role-check-name' }, el('span', { textContent: r.name }));
+    if (r.canEdit) nameRow.append(el('span', { className: 'edit-badge', textContent: '可编辑' }));
     const label = el('label', { className: 'role-check' },
       cb,
-      el('span', { className: 'role-check-name', textContent: r.name }),
+      nameRow,
       el('span', { className: 'role-check-folders', textContent: r.folders.join('  ') || '（无文件夹）' })
     );
     box.append(label);
@@ -514,19 +625,25 @@ function openUserEditModal(u) {
   const adminCb = el('input', { type: 'checkbox', checked: u.admin });
   const adminLabel = el('label', { className: 'check-row' }, adminCb, el('span', { textContent: '管理员（拥有全部访问权限）' }));
   const roleList = makeRoleChecklist(u.roleNames);
-  const folderEditor = makeFolderEditor(u.extraFolders.filter((f) => f !== '/'));
-  const fullFolderCb = el('input', { type: 'checkbox', checked: u.extraFolders.includes('/') });
+
+  const fullEntry = (u.extraFolders || []).find((f) => f.path === '/');
+  const folderEditor = makeFolderEditor((u.extraFolders || []).filter((f) => f.path !== '/'));
+  const fullFolderCb = el('input', { type: 'checkbox', checked: !!fullEntry });
+  const fullWriteCb = el('input', { type: 'checkbox', checked: !!fullEntry?.write });
   const fullFolderLabel = el('label', { className: 'check-row' }, fullFolderCb,
     el('span', { textContent: '额外授予“整个共享目录”（等同完全访问，慎用）' }));
+  const fullWriteLabel = el('label', { className: 'check-row check-indent' }, fullWriteCb,
+    el('span', { textContent: '并允许编辑整个共享目录' }));
   const err = el('div', { className: 'modal-error hidden' });
 
   // When "admin" is on, role/folder choices don't matter — dim them.
   const detail = el('div', {},
-    el('p', { className: 'modal-note', textContent: '分配角色（可多选，用户将获得这些角色的所有文件夹）：' }),
+    el('p', { className: 'modal-note', textContent: '分配角色（可多选，用户将获得这些角色的所有文件夹；带“可编辑”标记的角色还可上传/替换/删除）：' }),
     roleList.element,
-    el('p', { className: 'modal-note', textContent: '额外授予的文件夹（在角色之外单独开放）：' }),
+    el('p', { className: 'modal-note', textContent: '额外授予的文件夹（在角色之外单独开放）。勾选“可编辑”即可在该文件夹内上传/替换/删除：' }),
     folderEditor.element,
-    fullFolderLabel
+    fullFolderLabel,
+    fullWriteLabel
   );
   function syncAdmin() {
     detail.style.opacity = adminCb.checked ? '0.45' : '1';
@@ -546,7 +663,7 @@ function openUserEditModal(u) {
   save.addEventListener('click', async () => {
     err.classList.add('hidden');
     const extra = [...folderEditor.getFolders()];
-    if (fullFolderCb.checked) extra.push('/');
+    if (fullFolderCb.checked) extra.push({ path: '/', write: fullWriteCb.checked });
     try {
       await api(`/api/admin/users/${encodeURIComponent(u.username)}`, {
         method: 'PUT',
@@ -573,29 +690,40 @@ function openRoleModal(role) {
     type: 'text', className: 'modal-input', placeholder: '角色名称，如：销售部',
     value: isEdit ? role.name : '', disabled: isEdit,
   });
-  const folderEditor = makeFolderEditor(isEdit ? role.folders.filter((f) => f !== '/') : []);
+  // Role folders are read-granted to members; the role's canEdit flag decides
+  // whether those folders are also editable. So the per-folder write toggle in
+  // the editor is not used here — we hide it and use one role-wide checkbox.
+  const folderEditor = makeFolderEditor(
+    isEdit ? role.folders.filter((f) => f !== '/').map((p) => ({ path: p, write: false })) : []
+  );
+  folderEditor.element.classList.add('hide-chip-edit');
+  const canEditCb = el('input', { type: 'checkbox', checked: isEdit ? !!role.canEdit : false });
+  const canEditLabel = el('label', { className: 'check-row' }, canEditCb,
+    el('span', { textContent: '允许该角色编辑其文件夹（上传 / 替换 / 删除）' }));
   const err = el('div', { className: 'modal-error hidden' });
 
   const body = el('div', {},
     labelWrap('角色名称', nameInput),
     el('p', { className: 'modal-note', textContent: '该角色包含的文件夹（拥有此角色的用户都能访问）：' }),
     folderEditor.element,
+    canEditLabel,
     err
   );
 
   const save = el('button', { className: 'btn-primary', textContent: isEdit ? '保存' : '创建' });
   save.addEventListener('click', async () => {
     err.classList.add('hidden');
+    const folders = folderEditor.getFolders().map((f) => f.path);
     try {
       if (isEdit) {
-        await api(`/api/admin/roles/${encodeURIComponent(role.name)}/folders`, {
+        await api(`/api/admin/roles/${encodeURIComponent(role.name)}`, {
           method: 'PUT',
-          body: JSON.stringify({ folders: folderEditor.getFolders() }),
+          body: JSON.stringify({ folders, canEdit: canEditCb.checked }),
         });
       } else {
         await api('/api/admin/roles', {
           method: 'POST',
-          body: JSON.stringify({ name: nameInput.value, folders: folderEditor.getFolders() }),
+          body: JSON.stringify({ name: nameInput.value, folders, canEdit: canEditCb.checked }),
         });
       }
       closeModal();

@@ -7,6 +7,8 @@ Windows / SMB file share. Each person logs in with their own account.
 - 📁 Browse folders with breadcrumb navigation
 - 🔎 Filter files in the current folder
 - ⬇️ One-click downloads (streamed, so large files are fine)
+- ✏️ Optional **edit rights** — upload, replace, and delete files where the admin grants it
+- 👥 **Roles** + per-user permissions, managed from a built-in admin panel
 - 🛡️ Path-traversal protection — users can never escape the share folder
 - 🧩 No database engine and no frontend build step to maintain
 
@@ -122,7 +124,8 @@ npm run user add <username>              # create a user (no access until grante
 npm run user add-admin <username>        # create an admin user
 npm run user set-admin <username> true   # promote to admin (or: ... false to demote)
 npm run user assign-role <username> <role>   # give the user a role
-npm run user grant <username> <folder>   # grant an extra individual folder
+npm run user grant <username> <folder>       # grant an extra folder (read-only)
+npm run user grant <username> <folder> edit  # ...or grant it with edit rights
 npm run user passwd <username>           # change a user's password
 npm run user remove <username>           # delete a user
 npm run user list                        # list users + roles + effective access
@@ -157,14 +160,17 @@ the command line for day-to-day user management.
 
 Access is built from **roles** plus optional **per-user extra folders**:
 
-- A **role** is a *named bundle of folders* — e.g. role `销售部` → `/Sales`, `/Reports`.
+- A **role** is a *named bundle of folders* — e.g. role `销售部` → `/Sales`, `/Reports` —
+  optionally flagged as **editable** (members can upload/replace/delete in those folders).
 - A user can be assigned **multiple roles** and gets the **union** of all their folders.
-- A user can **also** be granted **extra individual folders** directly, on top of their roles.
-- **Effective access = (all assigned roles' folders) ∪ (extra folders).** Admins always see
-  the whole share. A user with no roles and no extra folders sees nothing.
+- A user can **also** be granted **extra individual folders** directly, each optionally
+  **editable**, on top of their roles.
+- **Effective read access = (all roles' folders) ∪ (extra folders).**
+  **Effective edit access = (edit-enabled roles' folders) ∪ (extra folders marked editable).**
+  Admins always see and can edit the whole share. A user with nothing assigned sees nothing.
 
-So you can, for example, give someone the `销售部` role *and* additionally open one specific
-project folder just for them — both at the same time.
+So you can, for example, give someone read-only access via the `销售部` role *and*
+additionally open one specific project folder for them with **edit** rights — at the same time.
 
 A restricted user gets a **virtual home** listing only their allowed folders, and **cannot
 navigate above them** — parent directories are never shown and are blocked server-side
@@ -173,33 +179,52 @@ navigate above them** — parent directories are never shown and are blocked ser
 ### In the admin panel (easiest)
 
 - **角色管理 (Roles):** click **新建角色**, name it, and add folders with **浏览并添加文件夹**
-  (browse the real share to pick them). Edit or delete roles anytime — deleting a role
-  automatically removes it from every user.
+  (browse the real share to pick them). Tick **允许该角色编辑其文件夹** to make the role's
+  folders editable. Edit or delete roles anytime — deleting a role automatically removes it
+  from every user.
 - **用户管理 (Users):** click **编辑权限** on a user to toggle admin, tick the **roles** they
-  should have, and add any **extra folders**. The table shows each user's effective access.
+  should have, and add any **extra folders** — each extra folder has a **可编辑** checkbox to
+  grant edit on just that folder. The table shows each user's effective access.
 
 ### From the command line
 
 ```powershell
-# Roles
-npm run role add 销售部 /Sales /Reports     # create a role with folders
-npm run role add-folder 销售部 /Archive      # append a folder to a role
-npm run role list                            # list roles
-npm run role remove 销售部                    # delete a role (also unassigns it)
+# Roles ("edit" makes the role's folders editable)
+npm run role add 销售部 /Sales /Reports        # create a read-only role
+npm run role add 编辑组 /Sales edit            # create a role whose folder is editable
+npm run role set-edit 销售部 true              # turn edit on/off for an existing role
+npm run role list                              # list roles (shows [可编辑] / [只读])
 
 # Assign to users (paths/roles relative to SHARE_ROOT, forward slashes)
-npm run user assign-role alice 销售部         # give alice a role
-npm run user grant alice /Projects/Acme      # grant an extra individual folder
-npm run user access alice                    # show alice's roles, extra folders, effective access
+npm run user assign-role alice 销售部           # give alice a role
+npm run user grant alice /Projects/Acme        # extra folder, read-only
+npm run user grant alice /Projects/Acme edit   # extra folder, editable
+npm run user access alice                      # show alice's roles, folders, read + edit access
 ```
 
 > **Run the CLI in PowerShell, not Git Bash** — Git Bash rewrites a leading-slash argument
 > like `/Sales` into a Windows path. PowerShell passes it through correctly.
 
+## Editing files (upload / replace / delete)
+
+Where a user has **edit rights** on a folder (via an edit-enabled role, or an extra folder
+marked editable), the file browser shows extra controls inside that folder:
+
+- **⬆ 上传文件** — upload one or more files into the current folder (streamed, large files OK).
+- **＋ 新建文件夹** — create a subfolder.
+- **替换** (on a file) — overwrite it with a newly chosen file.
+- **删除** (on a file or folder) — delete it (folders are removed with their contents).
+
+Users without edit rights on a folder simply don't see these controls, and the server
+rejects any write attempt there. **Edit access is always a subset of read access**, and is
+enforced server-side (with the same `../` traversal protection as reads). To **take back**
+edit rights, untick the role's edit flag or the user's per-folder **可编辑** box.
+
 **Note:** these app permissions sit *on top of* Windows/NTFS share permissions. The app can
-only ever read what the Windows account running the server can read (see below). App
-permissions let you show each user a **narrower** slice — they cannot grant access the
-underlying account doesn't have.
+only ever read/write what the Windows account running the server can — so that account needs
+**write** permission on the share for editing to work (for read-only deployments, simply
+grant no edit rights). App permissions let you show each user a **narrower** slice — they
+cannot grant access the underlying account doesn't have.
 
 ---
 

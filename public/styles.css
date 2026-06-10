@@ -267,7 +267,13 @@ body {
   width: 180px;
 }
 .col-action {
-  width: 120px;
+  width: 230px;
+  white-space: nowrap;
+  text-align: right;
+}
+td.col-action > * {
+  vertical-align: middle;
+  margin-left: 6px;
 }
 
 .file-table tbody tr {
@@ -429,6 +435,45 @@ body {
   color: var(--muted);
   margin: 0;
   font-size: 14px;
+}
+
+/* ---------- Upload toolbar ---------- */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.upload-status {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* ---------- Edit capability badges / toggles ---------- */
+.edit-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #dcfce7;
+  color: #15803d;
+}
+.chip-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.hide-chip-edit .chip-edit {
+  display: none;
+}
+.check-indent {
+  margin-left: 24px;
 }
 
 /* ---------- Admin sections ---------- */

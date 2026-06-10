@@ -4,7 +4,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { config } from './config.js';
 import { requireAuth } from './auth.js';
-import { findUser, effectiveRoots } from './users.js';
+import { findUser, effectiveRoots, effectiveWriteRoots } from './users.js';
 import { normRoot } from './paths.js';
 
 export const filesRouter = express.Router();
@@ -19,9 +19,14 @@ function rootsFor(username) {
   return effectiveRoots(findUser(username));
 }
 
+// The folders the current user may edit (upload / replace / delete).
+function writeRootsFor(username) {
+  return effectiveWriteRoots(findUser(username));
+}
+
 const hasFullAccess = (roots) => roots.includes('/');
 
-// Is the relative path "/a/b" inside at least one allowed root?
+// Is the relative path "/a/b" inside at least one root in the list?
 function isAllowed(relPath, roots) {
   if (hasFullAccess(roots)) return true;
   const p = normRoot(relPath);
@@ -169,6 +174,8 @@ filesRouter.get('/files', async (req, res) => {
       path: toRelative(abs),
       entries,
       breadcrumb: buildBreadcrumb(toRelative(abs), roots),
+      // Whether the user may upload/replace/delete inside THIS folder.
+      canWrite: isAllowed(toRelative(abs), writeRootsFor(req.user)),
     });
   } catch (e) {
     if (e.code === 'ENOENT') return res.status(404).json({ error: '未找到该文件夹。' });
@@ -219,5 +226,101 @@ filesRouter.get('/download', async (req, res) => {
       return res.status(403).json({ error: '没有读取该文件的权限。' });
     console.error('[files] download error:', e);
     res.status(500).json({ error: '无法下载该文件。' });
+  }
+});
+
+// ---- Write operations (upload / replace / delete) -----------------------
+
+// Resolve + authorize a write target. Returns the absolute path, or sends an
+// error response and returns null.
+function authorizeWrite(req, res, { mustNotBeRoot = true } = {}) {
+  let abs;
+  try {
+    abs = resolveSafe(req.query.path || '/');
+  } catch (e) {
+    res.status(403).json({ error: e.message });
+    return null;
+  }
+  const rel = toRelative(abs);
+  if (mustNotBeRoot && rel === '/') {
+    res.status(400).json({ error: '不允许对共享根目录执行此操作。' });
+    return null;
+  }
+  if (!isAllowed(rel, writeRootsFor(req.user))) {
+    res.status(403).json({ error: '您没有编辑该位置的权限。' });
+    return null;
+  }
+  return abs;
+}
+
+// PUT /api/file?path=/dir/name.ext  -> create or overwrite a file.
+// Body is the raw file bytes (streamed). Used for both upload and replace.
+filesRouter.put('/file', async (req, res) => {
+  const abs = authorizeWrite(req, res);
+  if (!abs) return;
+  try {
+    // Parent folder must already exist and be a directory.
+    const parent = path.dirname(abs);
+    const pstat = await fsp.stat(parent).catch(() => null);
+    if (!pstat || !pstat.isDirectory()) {
+      return res.status(400).json({ error: '目标文件夹不存在。' });
+    }
+    // Refuse to overwrite a directory with a file.
+    const existing = await fsp.stat(abs).catch(() => null);
+    if (existing && existing.isDirectory()) {
+      return res.status(400).json({ error: '同名文件夹已存在，无法作为文件覆盖。' });
+    }
+
+    await new Promise((resolve, reject) => {
+      const out = fs.createWriteStream(abs);
+      out.on('error', reject);
+      out.on('finish', resolve);
+      req.on('error', reject);
+      req.pipe(out);
+    });
+    res.json({ ok: true, path: toRelative(abs), replaced: !!existing });
+  } catch (e) {
+    if (e.code === 'EPERM' || e.code === 'EACCES')
+      return res.status(403).json({ error: '没有写入该位置的权限（请检查共享目录的写权限）。' });
+    console.error('[files] upload error:', e);
+    res.status(500).json({ error: '保存文件失败。' });
+  }
+});
+
+// DELETE /api/file?path=/dir/name.ext  -> delete a file or folder.
+filesRouter.delete('/file', async (req, res) => {
+  const abs = authorizeWrite(req, res);
+  if (!abs) return;
+  try {
+    const stat = await fsp.stat(abs);
+    if (stat.isDirectory()) {
+      await fsp.rm(abs, { recursive: true, force: true });
+    } else {
+      await fsp.unlink(abs);
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    if (e.code === 'ENOENT') return res.status(404).json({ error: '未找到要删除的文件或文件夹。' });
+    if (e.code === 'EPERM' || e.code === 'EACCES')
+      return res.status(403).json({ error: '没有删除该项目的权限。' });
+    console.error('[files] delete error:', e);
+    res.status(500).json({ error: '删除失败。' });
+  }
+});
+
+// POST /api/folder?path=/dir/newfolder  -> create a folder.
+filesRouter.post('/folder', async (req, res) => {
+  const abs = authorizeWrite(req, res);
+  if (!abs) return;
+  try {
+    await fsp.mkdir(abs, { recursive: false });
+    res.json({ ok: true, path: toRelative(abs) });
+  } catch (e) {
+    if (e.code === 'EEXIST') return res.status(400).json({ error: '该文件夹已存在。' });
+    if (e.code === 'ENOENT') return res.status(400).json({ error: '上级文件夹不存在。' });
+    if (e.code === 'EPERM' || e.code === 'EACCES')
+      return res.status(403).json({ error: '没有在此处创建文件夹的权限。' });
+    console.error('[files] mkdir error:', e);
+    res.status(500).json({ error: '创建文件夹失败。' });
   }
 });

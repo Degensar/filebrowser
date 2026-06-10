@@ -5,7 +5,8 @@ Project memory for Claude Code. Read this first when working in this repo.
 ## What this is
 
 An internal web app for a **China-based company** that lets staff **browse and download**
-files from a company **Windows / SMB file share**. Self-hosted, runs on Windows. The entire
+files from a company **Windows / SMB file share**, and — where an admin has granted edit
+rights — **upload, replace, and delete** files. Self-hosted, runs on Windows. The entire
 **UI and all user-facing text must stay in Chinese (zh-CN)** — keep it that way for any new
 strings (server error messages too).
 
@@ -30,25 +31,39 @@ service account) — outside the app. The app is **read-only**; it never writes 
 
 ## Permission model (important)
 
-- **Roles** (`data/roles.json`): a named bundle of folders, e.g. `销售部 → [/Sales, /Reports]`.
-- **Users** (`data/users.json`): each has `admin` (bool), `roleNames[]`, `extraFolders[]`.
-- **Effective access** (non-admin) = union of all assigned roles' folders **+** the user's
-  extra folders. Admins always get the whole share (`["/"]`). Computed in
-  `users.effectiveRoots()` — this is the single source of truth used by `files.js`.
-- Folder paths are normalized to `/a/b` form by `paths.js` (`normRoot`, `normFolders`); `/`
-  means the whole share (full access).
+Two layers: **read access** (which folders you can see/download) and **write/edit access**
+(upload / replace / delete inside a folder). Write is always a subset of read.
+
+- **Roles** (`data/roles.json`): a named bundle of folders, e.g. `销售部 → [/Sales, /Reports]`,
+  plus a `canEdit` boolean. If `canEdit` is true, members can edit that role's folders.
+- **Users** (`data/users.json`): each has `admin` (bool), `roleNames[]`, and
+  `extraFolders[]` — where each extra folder is `{ path, write }` (per-folder edit toggle).
+- **Effective READ access** (non-admin) = union of all assigned roles' folders **+** the
+  user's extra-folder paths. → `users.effectiveRoots()`.
+- **Effective WRITE access** (non-admin) = folders of **edit-enabled roles** (`canEdit`)
+  **+** extra folders where `write === true`. → `users.effectiveWriteRoots()`.
+- Admins always get the whole share (`["/"]`) for both read and write.
+- These two functions in `users.js` are the single source of truth used by `files.js`.
+- Folder paths are normalized to `/a/b` by `paths.js` (`normRoot`, `normFolders`); `/` means
+  the whole share. Extra folders are normalized by `users.normExtra()` (handles legacy
+  `string[]` → `{path, write}` migration).
 - **Self-registration:** the **first** account to register becomes the admin; everyone else
   registers with **no access** until an admin grants roles/folders.
+- Admin "takes back" edit rights by unchecking a role's `canEdit` or a user folder's `write`.
 
 ## Security invariants — do not regress
 
 - `files.js` **canonicalizes the path first** (`resolveSafe` resolves `..` and confines to
   `SHARE_ROOT`) and **only then** checks permission against the canonical relative path.
   A previous bug let `/Sales/../HR` escape a grant — keep the canonicalize-before-check order.
+  This applies to **write routes too** (`authorizeWrite` resolves before checking write roots).
+- Write/delete operations refuse to act on the share root itself (`mustNotBeRoot`).
 - The breadcrumb is computed **server-side** so restricted users never see parent folders
   above their allowed roots.
 - Guards: cannot delete/demote the **last admin**; cannot delete/demote **yourself**.
 - New registrants get zero access by default (registration cannot self-grant files).
+- Uploads are **streamed** (`req.pipe` → write stream) — no extra dependency, handles large
+  files. `express.json()` ignores the `application/octet-stream` body so the stream is intact.
 
 ## Layout
 
@@ -71,11 +86,16 @@ public/      index.html + styles.css + app.js  (login/register, browser, admin p
 ## API surface
 
 - `POST /api/auth/{login,register,logout}`, `GET /api/auth/me`
-- `GET /api/files?path=`, `GET /api/download?path=` (auth required, permission-checked)
+- `GET /api/files?path=` (returns `canWrite` for the folder), `GET /api/download?path=`
+- Write (auth + write-permission on target):
+  - `PUT /api/file?path=` — create/overwrite a file (raw body = bytes; upload & replace)
+  - `DELETE /api/file?path=` — delete a file or folder (recursive for folders)
+  - `POST /api/folder?path=` — create a folder
 - Admin (admin only):
   - `GET/POST /api/admin/users`, `PUT/DELETE /api/admin/users/:username`,
     `POST /api/admin/users/:username/password`
-  - `GET/POST /api/admin/roles`, `PUT /api/admin/roles/:name/folders`,
+    (`PUT` body: `{ admin?, roleNames?, extraFolders:[{path,write}] }`)
+  - `GET/POST /api/admin/roles`, `PUT /api/admin/roles/:name` (`{folders?, canEdit?}`),
     `DELETE /api/admin/roles/:name`
 
 ## Running / testing

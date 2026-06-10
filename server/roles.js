@@ -25,7 +25,10 @@ function validName(name) {
 export function listRoles() {
   ensureStore();
   const roles = JSON.parse(fs.readFileSync(ROLES_FILE, 'utf8'));
-  for (const r of roles) if (!Array.isArray(r.folders)) r.folders = [];
+  for (const r of roles) {
+    if (!Array.isArray(r.folders)) r.folders = [];
+    if (typeof r.canEdit !== 'boolean') r.canEdit = false; // back-compat
+  }
   return roles;
 }
 
@@ -46,23 +49,30 @@ export function findRole(name) {
   return listRoles().find((r) => r.name === n) || null;
 }
 
-export function addRole(name, folders = []) {
+export function addRole(name, folders = [], canEdit = false) {
   const n = validName(name);
   const roles = listRoles();
   if (roles.some((r) => r.name === n)) throw new Error(`角色“${n}”已存在。`);
-  roles.push({ name: n, folders: normFolders(folders), createdAt: new Date().toISOString() });
+  roles.push({
+    name: n,
+    folders: normFolders(folders),
+    canEdit: !!canEdit,
+    createdAt: new Date().toISOString(),
+  });
   saveRoles(roles);
   return n;
 }
 
-export function setRoleFolders(name, folders) {
+// Update a role's folders and/or its edit capability. Pass undefined to leave a field as-is.
+export function updateRole(name, { folders, canEdit } = {}) {
   const n = String(name || '').trim();
   const roles = listRoles();
   const role = roles.find((r) => r.name === n);
   if (!role) throw new Error(`未找到角色“${n}”。`);
-  role.folders = normFolders(folders);
+  if (folders !== undefined) role.folders = normFolders(folders);
+  if (canEdit !== undefined) role.canEdit = !!canEdit;
   saveRoles(roles);
-  return role.folders;
+  return role;
 }
 
 export function removeRole(name) {
