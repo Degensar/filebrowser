@@ -3,12 +3,14 @@
 A simple, clean web app for staff to **browse and download** files from a company
 Windows / SMB file share. Each person logs in with their own account.
 
+- 🔒 **HTTPS** out of the box (auto self-signed cert, or bring your own)
 - 🔐 Login required (app-managed accounts, bcrypt-hashed passwords)
 - 📁 Browse folders with breadcrumb navigation
 - 🔎 Filter files in the current folder
 - ⬇️ One-click downloads (streamed, so large files are fine)
 - ✏️ Optional **edit rights** — upload, replace, and delete files where the admin grants it
 - 👥 **Roles** + per-user permissions, managed from a built-in admin panel
+- 🗂️ **Auto-folders** — every role gets a shared folder; every employee gets a private one
 - 🛡️ Path-traversal protection — users can never escape the share folder
 - 🧩 No database engine and no frontend build step to maintain
 
@@ -101,19 +103,37 @@ admin.
 
 ## Configuration (`.env`)
 
-| Setting          | What it does                                                                 |
-| ---------------- | --------------------------------------------------------------------------- |
-| `PORT`           | Port the web app listens on (default `3000`).                               |
-| `SHARE_ROOT`     | The folder to expose. Use the UNC path for an SMB share, e.g. `\\fileserver\shared`. A local path like `C:\working` also works (handy for testing). |
-| `JWT_SECRET`     | Long random string used to sign login cookies. **Must be changed.**         |
-| `SESSION_HOURS`  | How long a login stays valid (default `12`).                                |
-| `SECURE_COOKIES` | Set to `true` when serving over HTTPS.                                       |
+| Setting             | What it does                                                              |
+| ------------------- | ------------------------------------------------------------------------ |
+| `PORT`              | Port the web app listens on (default `3000`).                            |
+| `SHARE_ROOT`        | The folder to expose. Use the UNC path for an SMB share, e.g. `\\fileserver\shared`. |
+| `JWT_SECRET`        | Long random string used to sign login cookies. **Must be changed.**      |
+| `SESSION_HOURS`     | How long a login stays valid (default `12`).                            |
+| `TLS_CERT_FILE` / `TLS_KEY_FILE` | Optional paths to a real PEM cert/key. If unset, a self-signed cert is generated. |
+| `HTTP_REDIRECT_PORT`| Optional. Run an HTTP listener on this port that 301-redirects to HTTPS (e.g. `80`). |
+| `TLS_DISABLE`       | Set `true` only if a reverse proxy (IIS/Nginx) terminates TLS and the app should serve plain HTTP. |
 
 Generate a strong `JWT_SECRET`:
 
 ```powershell
 node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 ```
+
+---
+
+## HTTPS
+
+The app serves **HTTPS by default** — open it at **`https://<host>:3000`**.
+
+- **No cert configured?** On first start it generates a **self-signed** certificate and
+  caches it in `data/tls/`. Browsers show a one-time "not private" warning for self-signed
+  certs — click through to proceed (or, better, install the cert as trusted on staff machines).
+- **Production:** point `TLS_CERT_FILE` / `TLS_KEY_FILE` at a real certificate (e.g. from your
+  internal CA or Let's Encrypt) for a warning-free experience.
+- **Behind a reverse proxy** that already does TLS? Set `TLS_DISABLE=true` so the app serves
+  HTTP locally and the proxy handles HTTPS.
+
+Login cookies are automatically marked `Secure` whenever HTTPS is on.
 
 ---
 
@@ -175,6 +195,30 @@ additionally open one specific project folder for them with **edit** rights — 
 A restricted user gets a **virtual home** listing only their allowed folders, and **cannot
 navigate above them** — parent directories are never shown and are blocked server-side
 (including `../` tricks).
+
+### Automatic folders
+
+The app creates folders under the share root automatically so structure follows permissions:
+
+- **Every role → a shared folder `/<role name>`.** When you create a role (panel or CLI), a
+  folder named after it is created under the share root and added to the role, so **everyone
+  with that role can use it** as a shared space. (Deleting a role does **not** delete its
+  folder, to avoid data loss.)
+- **The `員工` (employee) role is built in.** New self-registered accounts get **no access at
+  all** until an **admin verifies them by assigning the `員工` role** (or any other role/folder).
+  This stops anyone who registers from reaching company files. The moment an admin adds a user
+  to `員工`, they receive the shared **`/員工`** folder **and a private folder named after their
+  username** (`/<username>`) that **only they and admins can see** — their own space to store
+  files. (The first-ever account is the admin and is exempt.)
+- Admins keep **full manual control** on top of all this: you can still add or remove any
+  role's folders, assign extra folders to individual users, and toggle edit rights — the
+  automatic folders are just sensible defaults, not a restriction.
+- Once a user has a personal folder, a **📁 我的文件夹** button appears in the top bar that
+  jumps straight to it. (Hidden for admins and for users without one.)
+
+> Personal folders are named exactly after the username. Avoid creating a user whose name
+> collides with an existing top-level folder (e.g. a department folder), or they'd be given
+> that folder as their "personal" one.
 
 ### In the admin panel (easiest)
 
@@ -292,14 +336,16 @@ reboot. Put it behind IIS/Nginx with HTTPS and set `SECURE_COOKIES=true`.
 filebrowser/
   CLAUDE.md      Project memory / architecture notes
   server/
-    index.js     Express app + static hosting
-    config.js    Loads/validates .env
+    index.js     HTTPS/HTTP server + static hosting + startup provisioning
+    config.js    Loads/validates .env (incl. TLS settings)
+    tls.js       Loads a real cert or generates/caches a self-signed one
+    provision.js Auto-creates role/personal folders (員工 role logic)
     paths.js     Shared path-normalization helpers (normRoot / normFolders)
     roles.js     Role store (data/roles.json) — named bundles of folders
     users.js     User store (bcrypt) + effective-access computation
-    auth.js      Login, register, logout, session cookie, auth + admin guards
+    auth.js      Login, register (auto-員工), logout, auth + admin guards
     admin.js     Admin-only API: users + roles CRUD
-    files.js     Directory listing + file download (effective-permission checks)
+    files.js     Directory listing + file download/upload/delete (permission-checked)
   scripts/
     manage-users.js   CLI: accounts, role assignment, extra folders (npm run user)
     manage-roles.js   CLI: create/edit/delete roles (npm run role)

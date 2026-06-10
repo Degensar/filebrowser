@@ -22,6 +22,39 @@ strings (server error messages too).
   are blocked in China. Everything must be self-hosted. Fonts use a Chinese-friendly system
   stack (Microsoft YaHei / PingFang). Dates use the `zh-CN` locale.
 
+## HTTPS
+
+The server runs over **HTTPS by default** (`server/index.js` → `https.createServer`). Cert
+resolution is in `server/tls.js`: explicit `TLS_CERT_FILE`/`TLS_KEY_FILE` from `.env` win;
+otherwise a self-signed cert is generated once (via the `selfsigned` pkg) and cached in
+`data/tls/`. Cookies are `Secure` whenever HTTPS is on (`config.secureCookies`). Set
+`TLS_DISABLE=true` only when a reverse proxy terminates TLS. Optional `HTTP_REDIRECT_PORT`
+runs a tiny 301-redirect listener. Self-signed certs trigger a browser warning — expected.
+
+> The Preview/headless tooling may reject the self-signed cert — test HTTPS with `curl -k`.
+
+## Auto-provisioned folders (roles & employees)
+
+`server/provision.js` creates real folders under the share root and wires up grants:
+
+- **`EMPLOYEE_ROLE = "員工"`** is hardcoded. **New registrants do NOT auto-join it** — they
+  register with zero access; an **admin must add them to `員工`** (panel/CLI) to verify them.
+  This is deliberate: self-registration must not grant access to company files. When a user is
+  added to `員工` (or any role change), `provisionUser` (called from `admin.js` and the
+  `assign-role` CLI) creates their personal **`/<username>`** folder, granted only to them
+  (writable) — so only they + admins see it. They also get the role's shared **`/員工`** folder.
+- `auth.accountInfo()` exposes a **`personalFolder`** field (`/<username>` or `null`); the
+  frontend renders a **📁 我的文件夹** top-bar button that jumps there (hidden when `null`).
+- **Every role** gets a shared folder **`/<roleName>`** auto-created and added to the role's
+  folder list (`ensureRoleFolder`), so all members can access it. Called from role creation
+  in `admin.js` and `manage-roles.js`, and at startup for `員工` (`provisionStartup`).
+- Folder names are sanitized to a single safe segment (no separators / traversal).
+- Provisioning is **best-effort**: a failure (offline/read-only share) logs a warning but
+  never blocks registration or role creation. Deleting a role does **not** delete its folder
+  (avoid data loss); admins still fully control grants on top of all this.
+- **Caveat:** a personal folder is `/<username>`; if a username collides with an existing
+  top-level folder name, the user would gain access to it. Usernames are `[a-z0-9._-]`.
+
 ## How files are accessed (SMB)
 
 There is **no SMB library**. On Windows the UNC path *is* the binding: `SHARE_ROOT` in
@@ -69,8 +102,10 @@ Two layers: **read access** (which folders you can see/download) and **write/edi
 
 ```
 server/
-  index.js   Express app + static hosting
-  config.js  Loads/validates .env (SHARE_ROOT, JWT_SECRET, ...)
+  index.js   HTTPS/HTTP server, static hosting, startup provisioning
+  config.js  Loads/validates .env (SHARE_ROOT, JWT_SECRET, TLS_*, ...)
+  tls.js     Loads explicit cert or generates/caches a self-signed one
+  provision.js  Auto-creates role/personal folders + grants (員工 role logic)
   paths.js   normRoot / normFolders (shared path helpers)
   roles.js   roles store (data/roles.json)
   users.js   user store + effectiveRoots() + describeAccess()
@@ -102,8 +137,10 @@ public/      index.html + styles.css + app.js  (login/register, browser, admin p
 
 - Start: `npm start` (port from `.env`, default 3000). Stop: Ctrl+C, or kill the process on
   the port (`Get-NetTCPConnection -LocalPort 3000 ... Stop-Process`).
-- On this dev machine `.env` `SHARE_ROOT` points at `C:\working` for testing; real deploys
-  use the `\\fileserver\shared` UNC path. `data/*.json` is gitignored and may be reset.
+- On this dev machine `.env` `SHARE_ROOT` points at `C:\working\testing folder`; real deploys
+  use the `\\fileserver\shared` UNC path. `data/*.json` and `data/tls/` are gitignored.
+- **Do NOT wipe `data/users.json` / `data/roles.json`** — they hold the user's real accounts.
+  Clean up only the specific test users/roles you create (via `npm run user/role remove`).
 - Manual end-to-end testing has been done via curl + the Preview tool (login/register,
   admin panel, role assignment, folder picker, traversal-attack 403s).
 

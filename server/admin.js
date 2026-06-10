@@ -14,6 +14,7 @@ import {
   removeRoleFromAllUsers,
 } from './users.js';
 import { listRoles, addRole, updateRole, removeRole, findRole } from './roles.js';
+import { ensureRoleFolder, provisionUser } from './provision.js';
 
 export const adminRouter = express.Router();
 adminRouter.use(requireAuth, requireAdmin);
@@ -24,7 +25,7 @@ adminRouter.get('/users', (req, res) => {
   res.json({ users: listUsers().map(publicUser) });
 });
 
-adminRouter.post('/users', (req, res) => {
+adminRouter.post('/users', async (req, res) => {
   const { username, password, admin, roleNames, extraFolders } = req.body || {};
   try {
     const created = addUser(username, password, {
@@ -32,6 +33,7 @@ adminRouter.post('/users', (req, res) => {
       roleNames: Array.isArray(roleNames) ? roleNames : [],
       extraFolders: Array.isArray(extraFolders) ? extraFolders : [],
     });
+    await provisionUser(created); // personal folder if they're an employee
     res.json({ ok: true, user: publicUser(findUser(created)) });
   } catch (e) {
     res.status(400).json({ error: e.message });
@@ -61,7 +63,7 @@ adminRouter.post('/users/:username/password', (req, res) => {
 });
 
 // Combined update of a user's access: admin flag, roles, and extra folders.
-adminRouter.put('/users/:username', (req, res) => {
+adminRouter.put('/users/:username', async (req, res) => {
   const target = req.params.username.toLowerCase();
   const { admin, roleNames, extraFolders } = req.body || {};
   try {
@@ -73,6 +75,7 @@ adminRouter.put('/users/:username', (req, res) => {
     }
     if (roleNames !== undefined) setUserRoles(target, roleNames);
     if (extraFolders !== undefined) setExtraFolders(target, extraFolders);
+    await provisionUser(target); // create personal folder if they're now an employee
     res.json({ ok: true, user: publicUser(findUser(target)) });
   } catch (e) {
     res.status(400).json({ error: e.message });
@@ -85,10 +88,11 @@ adminRouter.get('/roles', (req, res) => {
   res.json({ roles: listRoles() });
 });
 
-adminRouter.post('/roles', (req, res) => {
+adminRouter.post('/roles', async (req, res) => {
   const { name, folders, canEdit } = req.body || {};
   try {
     const created = addRole(name, Array.isArray(folders) ? folders : [], !!canEdit);
+    await ensureRoleFolder(created); // create the role's shared folder "/<name>"
     res.json({ ok: true, role: findRole(created) });
   } catch (e) {
     res.status(400).json({ error: e.message });

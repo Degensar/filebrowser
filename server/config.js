@@ -24,10 +24,24 @@ if (!fs.existsSync(shareRoot)) {
   );
 }
 
+// HTTPS is on by default. Set TLS_DISABLE=true only when something else
+// terminates TLS in front of the app (e.g. IIS/Nginx reverse proxy).
+const tlsDisabled = String(process.env.TLS_DISABLE).toLowerCase() === 'true';
+
 export const config = {
   port: Number(process.env.PORT) || 3000,
   shareRoot,
   jwtSecret: required('JWT_SECRET', process.env.JWT_SECRET),
   sessionHours: Number(process.env.SESSION_HOURS) || 12,
-  secureCookies: String(process.env.SECURE_COOKIES).toLowerCase() === 'true',
+
+  // --- TLS / HTTPS ---
+  https: !tlsDisabled,
+  // Optional explicit certificate (recommended in production with a real CA cert).
+  tlsCertFile: process.env.TLS_CERT_FILE || '',
+  tlsKeyFile: process.env.TLS_KEY_FILE || '',
+  // Optional: run a tiny HTTP listener on this port that 301-redirects to HTTPS.
+  httpRedirectPort: Number(process.env.HTTP_REDIRECT_PORT) || 0,
+
+  // Cookies are marked Secure whenever we serve HTTPS.
+  secureCookies: !tlsDisabled,
 };

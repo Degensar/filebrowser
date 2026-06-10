@@ -45,6 +45,8 @@ function showApp() {
   show('app-view');
   $('who').textContent = state.account ? `当前用户：${state.account.username}` : '';
   $('admin-btn').classList.toggle('hidden', !state.account?.isAdmin);
+  // "我的文件夹" shortcut: only when the user has a personal folder.
+  $('myfolder-btn').classList.toggle('hidden', !state.account?.personalFolder);
 }
 
 // ---------- Auth (login / register toggle) ----------
@@ -95,6 +97,10 @@ $('login-form').addEventListener('submit', async (e) => {
     btn.disabled = false;
     setAuthMode(state.authMode);
   }
+});
+
+$('myfolder-btn').addEventListener('click', () => {
+  if (state.account?.personalFolder) navigate(state.account.personalFolder);
 });
 
 $('logout-btn').addEventListener('click', async () => {

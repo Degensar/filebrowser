@@ -13,6 +13,7 @@ import {
   describeAccess,
   describeWrite,
 } from '../server/users.js';
+import { provisionUser } from '../server/provision.js';
 import { normRoot } from '../server/paths.js';
 
 function prompt(question, { hidden = false } = {}) {
@@ -93,6 +94,7 @@ try {
       if (!username || !arg3) throw new Error('用法：npm run user assign-role <用户名> <角色名>');
       const user = getUser(username);
       setUserRoles(username, [...new Set([...user.roleNames, arg3])]);
+      await provisionUser(username); // personal folder if the role is 員工
       console.log(`✓ 已为“${user.username}”分配角色“${arg3}”。当前可访问：${describeAccess(getUser(username))}`);
       break;
     }

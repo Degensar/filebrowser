@@ -2,6 +2,7 @@
 //   npm run role <command> ...
 import { listRoles, addRole, updateRole, removeRole, findRole } from '../server/roles.js';
 import { removeRoleFromAllUsers } from '../server/users.js';
+import { ensureRoleFolder } from '../server/provision.js';
 import { normFolders } from '../server/paths.js';
 
 const [, , cmd, name, ...rest] = process.argv;
@@ -19,6 +20,7 @@ try {
       if (!name) throw new Error('用法：npm run role add <角色名> [文件夹 ...] [edit]');
       const { folders, editable } = pullEditFlag(rest);
       addRole(name, folders, editable);
+      await ensureRoleFolder(name); // create the role's shared folder "/<name>"
       const role = findRole(name);
       console.log(
         `✓ 已创建角色“${role.name}”（${role.canEdit ? '可编辑' : '只读'}），包含文件夹：${role.folders.join('  ') || '（无）'}`

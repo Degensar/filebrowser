@@ -29,11 +29,17 @@ function issueSession(res, username) {
 // Shape of the "who am I" response used by the frontend to decide what to show.
 function accountInfo(user) {
   const admin = isAdmin(user);
+  // The personal folder "/<username>" exists only if it was granted (i.e. the
+  // user has been added to the 員工 role). Admins don't get a personal folder.
+  const personal = '/' + user.username;
+  const personalFolder =
+    !admin && (user.extraFolders || []).some((f) => f.path === personal) ? personal : null;
   return {
     username: user.username,
     isAdmin: admin,
     // A non-admin has access only if their roles/extra folders resolve to something.
     hasAccess: admin || effectiveRoots(user).length > 0,
+    personalFolder,
   };
 }
 
@@ -50,8 +56,10 @@ authRouter.post('/login', (req, res) => {
   res.json({ ok: true, ...accountInfo(user) });
 });
 
-// Self-registration. New accounts get NO folder access until an admin grants it.
-// Exception: if the store is empty, the first account becomes the admin.
+// Self-registration. The first account becomes the admin. Everyone else is
+// created with NO access and NO role — an admin must verify them by adding the
+// "員工" role (or other roles/folders) before they can see any content. This
+// prevents anyone who registers from reaching company files.
 authRouter.post('/register', (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password) {
@@ -59,7 +67,6 @@ authRouter.post('/register', (req, res) => {
   }
   const bootstrap = countUsers() === 0;
   try {
-    // First user becomes the admin; everyone else starts with no access.
     const created = addUser(username, password, { admin: bootstrap });
     const user = findUser(created);
     issueSession(res, user.username);
