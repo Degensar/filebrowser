@@ -126,8 +126,10 @@ async function navigate(path) {
     state.canWrite = !!data.canWrite;
     renderBreadcrumb(data.breadcrumb);
     renderList(data.entries);
-    // Show the upload toolbar only where the user may edit (never at virtual home).
-    $('toolbar').classList.toggle('hidden', !(state.canWrite && data.path !== '/'));
+    // Show the upload toolbar wherever the user may edit. The server only sets
+    // canWrite on real folder listings (a restricted user's virtual home never
+    // does), so this correctly includes the real share root for admins.
+    $('toolbar').classList.toggle('hidden', !state.canWrite);
     $('upload-status').textContent = '';
   } catch (err) {
     showError(err.message);
