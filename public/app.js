@@ -25,7 +25,7 @@ async function api(url, options = {}) {
   } catch {
     /* 非 JSON 响应 */
   }
-  if (!res.ok) throw new Error(data?.error || `请求失败（${res.status}）`);
+  if (!res.ok) throw new Error((data && data.error) || `请求失败（${res.status}）`);
   return data;
 }
 
@@ -44,9 +44,9 @@ function showLogin() {
 function showApp() {
   show('app-view');
   $('who').textContent = state.account ? `当前用户：${state.account.username}` : '';
-  $('admin-btn').classList.toggle('hidden', !state.account?.isAdmin);
+  $('admin-btn').classList.toggle('hidden', !(state.account && state.account.isAdmin));
   // "我的文件夹" shortcut: only when the user has a personal folder.
-  $('myfolder-btn').classList.toggle('hidden', !state.account?.personalFolder);
+  $('myfolder-btn').classList.toggle('hidden', !(state.account && state.account.personalFolder));
 }
 
 // ---------- Auth (login / register toggle) ----------
@@ -100,7 +100,7 @@ $('login-form').addEventListener('submit', async (e) => {
 });
 
 $('myfolder-btn').addEventListener('click', () => {
-  if (state.account?.personalFolder) navigate(state.account.personalFolder);
+  if (state.account && state.account.personalFolder) navigate(state.account.personalFolder);
 });
 
 $('logout-btn').addEventListener('click', async () => {
@@ -637,7 +637,7 @@ function openUserEditModal(u) {
   const fullEntry = (u.extraFolders || []).find((f) => f.path === '/');
   const folderEditor = makeFolderEditor((u.extraFolders || []).filter((f) => f.path !== '/'));
   const fullFolderCb = el('input', { type: 'checkbox', checked: !!fullEntry });
-  const fullWriteCb = el('input', { type: 'checkbox', checked: !!fullEntry?.write });
+  const fullWriteCb = el('input', { type: 'checkbox', checked: !!(fullEntry && fullEntry.write) });
   const fullFolderLabel = el('label', { className: 'check-row' }, fullFolderCb,
     el('span', { textContent: '额外授予“整个共享目录”（等同完全访问，慎用）' }));
   const fullWriteLabel = el('label', { className: 'check-row check-indent' }, fullWriteCb,

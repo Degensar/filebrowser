@@ -16,6 +16,15 @@ Windows / SMB file share. Each person logs in with their own account.
 
 ---
 
+## Requirements
+
+- **Node.js 16+.** On **CentOS 7 / RHEL 7** (glibc 2.17) you **must use Node 16** — the
+  official Node 18+ binaries require glibc 2.28 and will not start there. Node 16 runs the
+  app fully. On newer systems, any current LTS is fine.
+- **Client browsers:** the UI is plain ES2017 (no build step) — works on Firefox 60+
+  (incl. RHEL 7's Firefox ESR), modern Chrome/Edge, etc. HTTPS needs the client to support
+  TLS 1.2 (anything from ~2014 onward).
+
 ## Quick start
 
 ```powershell

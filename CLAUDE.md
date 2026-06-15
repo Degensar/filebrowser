@@ -10,6 +10,19 @@ rights — **upload, replace, and delete** files. Self-hosted, runs on Windows. 
 **UI and all user-facing text must stay in Chinese (zh-CN)** — keep it that way for any new
 strings (server error messages too).
 
+## Deployment targets / compatibility constraints (do not regress)
+
+- **Server runs on CentOS 7 (glibc 2.17) → must stay Node-16-compatible.** Official Node 18+
+  won't run on CentOS 7. Don't use runtime features newer than Node 16 (e.g. `node --watch`,
+  `structuredClone`, `Array.fromAsync`). `package.json` engines = `>=16`.
+- **Clients include RHEL 7.6 (Firefox ESR, possibly v60) → frontend must stay ES2017.** No
+  build step. **Do not use optional chaining (`?.`), nullish coalescing (`??`), `replaceAll`,**
+  or other ES2020+ syntax in `public/*.js` — it white-screens old Firefox. `fetch`, `async`,
+  arrow fns, template literals are fine. (Server-side `?.` is OK — Node 16 supports it.)
+- Distributed storage works if mounted as a filesystem (CephFS/NFS/JuiceFS/SMB); point
+  `SHARE_ROOT` at the mount. Object-storage-only (S3 API) would need a storage-layer rewrite.
+  Multiple app instances would need shared/DB-backed user+role state (currently local JSON).
+
 ## Stack & conventions
 
 - **Backend:** Node.js + Express (ES modules, `"type": "module"`). All dependencies are

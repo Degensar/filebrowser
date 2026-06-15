@@ -39,6 +39,13 @@ export const config = {
   // Optional explicit certificate (recommended in production with a real CA cert).
   tlsCertFile: process.env.TLS_CERT_FILE || '',
   tlsKeyFile: process.env.TLS_KEY_FILE || '',
+  // Extra hostnames / IPs to include in the auto self-signed cert, so clients
+  // reaching the server by LAN IP or hostname don't get a name-mismatch warning.
+  // Comma- or space-separated, e.g. TLS_HOSTS=files.corp.local,192.168.1.50
+  tlsHosts: (process.env.TLS_HOSTS || '')
+    .split(/[,\s]+/)
+    .map((h) => h.trim())
+    .filter(Boolean),
   // Optional: run a tiny HTTP listener on this port that 301-redirects to HTTPS.
   httpRedirectPort: Number(process.env.HTTP_REDIRECT_PORT) || 0,
 
