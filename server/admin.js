@@ -15,6 +15,8 @@ import {
 } from './users.js';
 import { listRoles, addRole, updateRole, removeRole, findRole } from './roles.js';
 import { ensureRoleFolder, provisionUser } from './provision.js';
+import { computeUsage } from './usage.js';
+import { queryActivity, queryEntries } from './audit.js';
 
 export const adminRouter = express.Router();
 adminRouter.use(requireAuth, requireAdmin);
@@ -117,5 +119,43 @@ adminRouter.delete('/roles/:name', (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     res.status(400).json({ error: e.message });
+  }
+});
+
+// ---------------- Reports ----------------
+
+// Storage usage per role and per user (walks the share — may take a moment).
+adminRouter.get('/usage', async (req, res) => {
+  try {
+    res.json(await computeUsage());
+  } catch (e) {
+    console.error('[admin] usage error:', e);
+    res.status(500).json({ error: '计算存储用量失败。' });
+  }
+});
+
+// Modification activity per user over a time window. ?days=1|7|30 or ?days=all
+adminRouter.get('/activity', async (req, res) => {
+  const days = req.query.days;
+  const sinceMs = !days || days === 'all' ? 0 : Date.now() - Number(days) * 86400000;
+  try {
+    res.json({ days: days || 'all', ...(await queryActivity(sinceMs)) });
+  } catch (e) {
+    console.error('[admin] activity error:', e);
+    res.status(500).json({ error: '查询修改记录失败。' });
+  }
+});
+
+// Full audit trail: individual write events (newest first), with filters.
+// ?days=1|7|30|all & ?user=<name> & ?action=upload|replace|delete|mkdir & ?limit=N
+adminRouter.get('/audit', async (req, res) => {
+  const { days, user, action } = req.query;
+  const sinceMs = !days || days === 'all' ? 0 : Date.now() - Number(days) * 86400000;
+  const limit = Math.min(Number(req.query.limit) || 500, 5000);
+  try {
+    res.json(await queryEntries({ sinceMs, user: user || '', action: action || '', limit }));
+  } catch (e) {
+    console.error('[admin] audit error:', e);
+    res.status(500).json({ error: '查询审计日志失败。' });
   }
 });

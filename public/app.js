@@ -361,6 +361,9 @@ $('admin-back-btn').addEventListener('click', () => {
 });
 $('admin-new-btn').addEventListener('click', openNewUserModal);
 $('admin-new-role-btn').addEventListener('click', () => openRoleModal(null));
+$('admin-usage-btn').addEventListener('click', openUsageModal);
+$('admin-activity-btn').addEventListener('click', openActivityModal);
+$('admin-audit-btn').addEventListener('click', openAuditModal);
 
 async function openAdmin() {
   show('admin-view');
@@ -480,6 +483,7 @@ function openModal(title, bodyEl, footerEl) {
 }
 function closeModal() {
   $('modal-overlay').classList.add('hidden');
+  $('modal').classList.remove('wide');
 }
 $('modal-close').addEventListener('click', closeModal);
 $('modal-overlay').addEventListener('click', (e) => {
@@ -742,6 +746,215 @@ function openRoleModal(role) {
     }
   });
   openModal(isEdit ? `编辑角色：${role.name}` : '新建角色', body, save);
+}
+
+// ---------- Storage usage report ----------
+async function openUsageModal() {
+  const body = el('div', {}, el('p', { className: 'modal-note', textContent: '正在统计存储用量…' }));
+  openModal('存储用量', body, null);
+  $('modal').classList.add('wide');
+  try {
+    const data = await api('/api/admin/usage');
+    body.innerHTML = '';
+
+    body.append(el('h4', { className: 'report-h', textContent: '按角色（共享文件夹）' }));
+    body.append(usageTable(data.roles.map((r) => ({
+      name: r.name, detail: r.folders.join('  ') || '（无文件夹）', bytes: r.bytes,
+    })), '角色'));
+
+    body.append(el('h4', { className: 'report-h', textContent: '按用户（个人 / 单独授予的文件夹）' }));
+    const userRows = data.users.map((u) => ({
+      name: u.username + (u.admin ? '（管理员）' : ''),
+      detail: u.folders.join('  ') || '（无个人文件夹）',
+      bytes: u.bytes,
+    }));
+    body.append(usageTable(userRows, '用户'));
+
+    body.append(el('p', { className: 'modal-note', textContent:
+      '说明：共享文件夹的占用计入对应角色；用户一栏仅统计其个人文件夹及单独授予的文件夹，避免重复计算。' }));
+  } catch (e) {
+    body.innerHTML = '';
+    body.append(el('div', { className: 'modal-error', textContent: e.message }));
+  }
+}
+
+function usageTable(rows, firstCol) {
+  const table = el('table', { className: 'report-table' });
+  const thead = el('thead', {}, el('tr', {},
+    el('th', { textContent: firstCol }),
+    el('th', { textContent: '文件夹' }),
+    el('th', { className: 'num', textContent: '占用' })
+  ));
+  const tbody = el('tbody');
+  if (rows.length === 0) {
+    tbody.append(el('tr', {}, el('td', { colSpan: 3, className: 'report-empty', textContent: '（无数据）' })));
+  }
+  for (const r of rows) {
+    tbody.append(el('tr', {},
+      el('td', { className: 'report-name', textContent: r.name }),
+      el('td', { className: 'report-detail', textContent: r.detail }),
+      el('td', { className: 'num', textContent: formatSize(r.bytes) })
+    ));
+  }
+  table.append(thead, tbody);
+  return table;
+}
+
+// ---------- Modification activity report ----------
+async function openActivityModal() {
+  const periodSel = el('select', { className: 'modal-input inline' });
+  periodSel.append(
+    el('option', { value: '1', textContent: '最近 24 小时' }),
+    el('option', { value: '7', textContent: '最近 7 天' }),
+    el('option', { value: '30', textContent: '最近 30 天' }),
+    el('option', { value: 'all', textContent: '全部时间' })
+  );
+  periodSel.value = '7';
+  const result = el('div', {});
+  const body = el('div', {},
+    el('div', { className: 'report-controls' },
+      el('span', { textContent: '统计周期：' }), periodSel),
+    result
+  );
+  openModal('活动统计（修改与下载）', body, null);
+  $('modal').classList.add('wide');
+
+  async function load() {
+    result.innerHTML = '';
+    result.append(el('p', { className: 'modal-note', textContent: '正在加载…' }));
+    try {
+      const data = await api(`/api/admin/activity?days=${encodeURIComponent(periodSel.value)}`);
+      result.innerHTML = '';
+      const table = el('table', { className: 'report-table' });
+      table.append(el('thead', {}, el('tr', {},
+        el('th', { textContent: '用户' }),
+        el('th', { className: 'num', textContent: '上传' }),
+        el('th', { className: 'num', textContent: '替换' }),
+        el('th', { className: 'num', textContent: '删除' }),
+        el('th', { className: 'num', textContent: '新建夹' }),
+        el('th', { className: 'num', textContent: '修改合计' }),
+        el('th', { className: 'num', textContent: '下载' }),
+        el('th', { className: 'num', textContent: '上传量' }),
+        el('th', { textContent: '最近活动' })
+      )));
+      const tbody = el('tbody');
+      if (data.perUser.length === 0) {
+        tbody.append(el('tr', {}, el('td', { colSpan: 9, className: 'report-empty', textContent: '该时段内没有活动记录。' })));
+      }
+      for (const u of data.perUser) {
+        tbody.append(el('tr', {},
+          el('td', { className: 'report-name', textContent: u.username }),
+          el('td', { className: 'num', textContent: u.upload }),
+          el('td', { className: 'num', textContent: u.replace }),
+          el('td', { className: 'num', textContent: u.delete }),
+          el('td', { className: 'num', textContent: u.mkdir }),
+          el('td', { className: 'num report-total', textContent: u.total }),
+          el('td', { className: 'num', textContent: u.download }),
+          el('td', { className: 'num', textContent: formatSize(u.bytes) }),
+          el('td', { className: 'report-detail', textContent: u.lastAt ? formatDate(new Date(u.lastAt).getTime()) : '—' })
+        ));
+      }
+      table.append(tbody);
+      result.append(table);
+      result.append(el('p', { className: 'modal-note', textContent: `共 ${data.totalEvents} 条活动记录（含下载）。` }));
+    } catch (e) {
+      result.innerHTML = '';
+      result.append(el('div', { className: 'modal-error', textContent: e.message }));
+    }
+  }
+  periodSel.addEventListener('change', load);
+  load();
+}
+
+// ---------- Full audit trail ----------
+const ACTION_LABEL = { upload: '上传', replace: '替换', delete: '删除', mkdir: '新建文件夹', download: '下载' };
+
+async function openAuditModal() {
+  const periodSel = el('select', { className: 'modal-input inline' });
+  periodSel.append(
+    el('option', { value: '1', textContent: '最近 24 小时' }),
+    el('option', { value: '7', textContent: '最近 7 天' }),
+    el('option', { value: '30', textContent: '最近 30 天' }),
+    el('option', { value: 'all', textContent: '全部时间' })
+  );
+  periodSel.value = '7';
+
+  const actionSel = el('select', { className: 'modal-input inline' });
+  actionSel.append(
+    el('option', { value: '', textContent: '全部操作' }),
+    el('option', { value: 'download', textContent: '下载' }),
+    el('option', { value: 'upload', textContent: '上传' }),
+    el('option', { value: 'replace', textContent: '替换' }),
+    el('option', { value: 'delete', textContent: '删除' }),
+    el('option', { value: 'mkdir', textContent: '新建文件夹' })
+  );
+
+  const userInput = el('input', { type: 'text', className: 'modal-input inline', placeholder: '按用户名筛选（可空）' });
+
+  const result = el('div', {});
+  const body = el('div', {},
+    el('div', { className: 'report-controls' },
+      el('span', { textContent: '周期：' }), periodSel,
+      el('span', { textContent: '操作：' }), actionSel,
+      userInput
+    ),
+    result
+  );
+  openModal('审计日志（谁、何时、做了什么）', body, null);
+  $('modal').classList.add('wide');
+
+  let timer = null;
+  async function load() {
+    result.innerHTML = '';
+    result.append(el('p', { className: 'modal-note', textContent: '正在加载…' }));
+    const params = new URLSearchParams({ days: periodSel.value, action: actionSel.value, limit: '500' });
+    if (userInput.value.trim()) params.set('user', userInput.value.trim().toLowerCase());
+    try {
+      const data = await api('/api/admin/audit?' + params.toString());
+      result.innerHTML = '';
+      const table = el('table', { className: 'report-table' });
+      table.append(el('thead', {}, el('tr', {},
+        el('th', { textContent: '时间' }),
+        el('th', { textContent: '用户' }),
+        el('th', { textContent: '操作' }),
+        el('th', { textContent: '路径' }),
+        el('th', { className: 'num', textContent: '大小' })
+      )));
+      const tbody = el('tbody');
+      if (data.entries.length === 0) {
+        tbody.append(el('tr', {}, el('td', { colSpan: 5, className: 'report-empty', textContent: '没有符合条件的记录。' })));
+      }
+      for (const e of data.entries) {
+        const actCell = el('td', {}, el('span', {
+          className: 'audit-badge audit-' + e.action,
+          textContent: ACTION_LABEL[e.action] || e.action,
+        }));
+        tbody.append(el('tr', {},
+          el('td', { className: 'audit-time', textContent: formatDate(new Date(e.ts).getTime()) }),
+          el('td', { className: 'report-name', textContent: e.user }),
+          actCell,
+          el('td', { className: 'report-detail', textContent: e.path, title: e.path }),
+          el('td', { className: 'num', textContent: e.action === 'mkdir' ? '—' : formatSize(e.bytes) })
+        ));
+      }
+      table.append(tbody);
+      result.append(table);
+      const note = data.truncated
+        ? `共 ${data.matched} 条匹配，仅显示最近 ${data.entries.length} 条。`
+        : `共 ${data.matched} 条记录。`;
+      result.append(el('p', { className: 'modal-note', textContent: note }));
+    } catch (e) {
+      result.innerHTML = '';
+      result.append(el('div', { className: 'modal-error', textContent: e.message }));
+    }
+  }
+  periodSel.addEventListener('change', load);
+  actionSel.addEventListener('change', load);
+  userInput.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(load, 300); // debounce typing
+  });
+  load();
 }
 
 // ---------- Folder picker (browses the real share) ----------

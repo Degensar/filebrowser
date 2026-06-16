@@ -145,6 +145,25 @@ public/      index.html + styles.css + app.js  (login/register, browser, admin p
     (`PUT` body: `{ admin?, roleNames?, extraFolders:[{path,write}] }`)
   - `GET/POST /api/admin/roles`, `PUT /api/admin/roles/:name` (`{folders?, canEdit?}`),
     `DELETE /api/admin/roles/:name`
+  - `GET /api/admin/usage` — storage bytes per role + per user (`usage.js`, walks the share)
+  - `GET /api/admin/activity?days=1|7|30|all` — write-action counts per user (`audit.js`)
+  - `GET /api/admin/audit?days=&user=&action=&limit=` — full audit trail, newest-first,
+    filterable (`audit.queryEntries`); returns `{entries, matched, truncated}`
+
+## Reports (storage usage + activity)
+
+- `server/audit.js` appends every write (upload/replace/delete/mkdir) **and download** to
+  `data/audit.log` (JSON Lines: `{ts,user,action,path,bytes}`), fire-and-forget from `files.js`
+  (the `GET /download` handler logs `action:'download'`). `queryActivity` aggregates per user
+  over a window — downloads are counted **separately** (`download` / `downloadBytes`), not in
+  the modification `total`. Log grows unbounded (downloads make it grow faster) — rotate if large.
+- `server/usage.js` `computeUsage()` walks folders (recursive `dirSize`, skips symlinks) to
+  total bytes **per role** (role.folders) and **per user** (their extraFolders / personal
+  folder). Shared role space is attributed to the role, not duplicated onto each member.
+  On-demand and uncached — can be slow on a huge share.
+- Admin UI: **📊 存储用量**, **🕒 活动统计**, and **📜 审计日志** buttons in the admin header
+  open `.modal.wide` report tables (`openUsageModal` / `openActivityModal` / `openAuditModal`
+  in `app.js`). The audit view has period/action/user filters and colour-coded action badges.
 
 ## Running / testing
 

@@ -225,6 +225,24 @@ The app creates folders under the share root automatically so structure follows 
 - Once a user has a personal folder, a **📁 我的文件夹** button appears in the top bar that
   jumps straight to it. (Hidden for admins and for users without one.)
 
+### Admin reports: storage usage & activity
+
+The admin panel header has two report buttons:
+
+- **📊 存储用量** — how much disk space is used, broken down **per role** (the role's shared
+  folders) and **per user** (their personal folder + any individually-granted folders). Shared
+  role space is counted under the role, not double-counted onto each member.
+- **🕒 活动统计** — per user: modification counts (uploads / replaces / deletes / new folders),
+  a separate **download** count, bytes uploaded, and last-activity time, over a selectable
+  window (24 hours / 7 days / 30 days / all time).
+- **📜 审计日志** — the full audit trail: the individual events (newest first) showing **who**,
+  **when**, **what action** (incl. **downloads**), the **file/folder path**, and the **size**.
+  Filter by time window, by action type, and by username.
+
+Both reports are backed by an append-only log at `data/audit.log` that records every write
+**and download** action. (Downloads are tracked separately from modifications, since they
+don't change anything.)
+
 > Personal folders are named exactly after the username. Avoid creating a user whose name
 > collides with an existing top-level folder (e.g. a department folder), or they'd be given
 > that folder as their "personal" one.
@@ -353,7 +371,9 @@ filebrowser/
     roles.js     Role store (data/roles.json) — named bundles of folders
     users.js     User store (bcrypt) + effective-access computation
     auth.js      Login, register (auto-員工), logout, auth + admin guards
-    admin.js     Admin-only API: users + roles CRUD
+    admin.js     Admin-only API: users + roles CRUD + usage/activity reports
+    audit.js     Append-only write-action log (data/audit.log) + activity aggregation
+    usage.js     Storage-usage computation (bytes per role / per user)
     files.js     Directory listing + file download/upload/delete (permission-checked)
   scripts/
     manage-users.js   CLI: accounts, role assignment, extra folders (npm run user)

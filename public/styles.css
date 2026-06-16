@@ -689,6 +689,98 @@ td.col-action > * {
   font-size: 13px;
 }
 
+/* ---------- Report modals (storage usage / activity) ---------- */
+.modal.wide {
+  max-width: 760px;
+}
+.report-h {
+  margin: 18px 0 8px;
+  font-size: 14px;
+  color: var(--text);
+}
+.report-h:first-child {
+  margin-top: 0;
+}
+.report-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 14px;
+}
+.modal-input.inline {
+  width: auto;
+  display: inline-block;
+}
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.report-table th,
+.report-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+.report-table th {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 12px;
+}
+.report-table .num {
+  text-align: right;
+  white-space: nowrap;
+}
+.report-name {
+  font-weight: 600;
+}
+.report-total {
+  font-weight: 700;
+  color: var(--accent);
+}
+.report-detail {
+  color: var(--muted);
+  word-break: break-all;
+  max-width: 240px;
+}
+.report-empty {
+  text-align: center;
+  color: var(--muted);
+  padding: 18px;
+}
+.audit-time {
+  white-space: nowrap;
+  color: var(--muted);
+}
+.audit-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.audit-upload {
+  background: #dcfce7;
+  color: #15803d;
+}
+.audit-replace {
+  background: #fef3c7;
+  color: #92600a;
+}
+.audit-delete {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.audit-mkdir {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.audit-download {
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
 /* ---------- Folder list (permissions) ---------- */
 .restricted-section {
   margin-top: 8px;

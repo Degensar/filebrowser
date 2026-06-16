@@ -6,6 +6,7 @@ import { config } from './config.js';
 import { requireAuth } from './auth.js';
 import { findUser, effectiveRoots, effectiveWriteRoots } from './users.js';
 import { normRoot } from './paths.js';
+import { logAction } from './audit.js';
 
 export const filesRouter = express.Router();
 filesRouter.use(requireAuth);
@@ -213,6 +214,8 @@ filesRouter.get('/download', async (req, res) => {
       `attachment; filename*=UTF-8''${encodeURIComponent(path.basename(abs))}`
     );
 
+    logAction({ user: req.user, action: 'download', path: toRelative(abs), bytes: stat.size });
+
     const stream = fs.createReadStream(abs);
     stream.on('error', (err) => {
       console.error('[files] download stream error:', err);
@@ -278,6 +281,13 @@ filesRouter.put('/file', async (req, res) => {
       req.on('error', reject);
       req.pipe(out);
     });
+    const written = await fsp.stat(abs).catch(() => null);
+    logAction({
+      user: req.user,
+      action: existing ? 'replace' : 'upload',
+      path: toRelative(abs),
+      bytes: written ? written.size : 0,
+    });
     res.json({ ok: true, path: toRelative(abs), replaced: !!existing });
   } catch (e) {
     if (e.code === 'EPERM' || e.code === 'EACCES')
@@ -298,6 +308,12 @@ filesRouter.delete('/file', async (req, res) => {
     } else {
       await fsp.unlink(abs);
     }
+    logAction({
+      user: req.user,
+      action: 'delete',
+      path: toRelative(abs),
+      bytes: stat.isFile() ? stat.size : 0,
+    });
     res.json({ ok: true });
   } catch (e) {
     if (e.code === 'ENOENT') return res.status(404).json({ error: '未找到要删除的文件或文件夹。' });
@@ -314,6 +330,7 @@ filesRouter.post('/folder', async (req, res) => {
   if (!abs) return;
   try {
     await fsp.mkdir(abs, { recursive: false });
+    logAction({ user: req.user, action: 'mkdir', path: toRelative(abs), bytes: 0 });
     res.json({ ok: true, path: toRelative(abs) });
   } catch (e) {
     if (e.code === 'EEXIST') return res.status(400).json({ error: '该文件夹已存在。' });
