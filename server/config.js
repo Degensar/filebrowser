@@ -51,4 +51,16 @@ export const config = {
 
   // Cookies are marked Secure whenever we serve HTTPS.
   secureCookies: !tlsDisabled,
+
+  // --- Audit log rotation ---
+  // When data/audit.log passes this size, it's rotated to audit.log.1, .2, …
+  // Set to 0 to disable the size cap (log grows unbounded). Default 10 MB.
+  auditMaxBytes:
+    (process.env.AUDIT_MAX_SIZE_MB !== undefined ? Number(process.env.AUDIT_MAX_SIZE_MB) : 10) *
+    1024 *
+    1024,
+  // How many rotated archives to keep (audit.log.1 … audit.log.N). 0 = keep none
+  // (just truncate). Default 5. Total disk ≈ auditMaxBytes × (auditMaxFiles + 1).
+  auditMaxFiles:
+    process.env.AUDIT_MAX_FILES !== undefined ? Math.max(0, Number(process.env.AUDIT_MAX_FILES)) : 5,
 };

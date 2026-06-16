@@ -156,7 +156,12 @@ public/      index.html + styles.css + app.js  (login/register, browser, admin p
   `data/audit.log` (JSON Lines: `{ts,user,action,path,bytes}`), fire-and-forget from `files.js`
   (the `GET /download` handler logs `action:'download'`). `queryActivity` aggregates per user
   over a window — downloads are counted **separately** (`download` / `downloadBytes`), not in
-  the modification `total`. Log grows unbounded (downloads make it grow faster) — rotate if large.
+  the modification `total`. **Rotated by size**: when the file passes `config.auditMaxBytes`
+  (`AUDIT_MAX_SIZE_MB`, default 10 MB) it becomes `audit.log.1`, `.2`, … keeping
+  `config.auditMaxFiles` archives (`AUDIT_MAX_FILES`, default 5). `logAction` tracks size
+  in-memory (no per-write `stat`) and calls a synchronous `rotate()` when over cap.
+  `queryActivity`/`queryEntries` read across current + rotated files (`readAllLines`), so
+  reports keep recent history. `AUDIT_MAX_SIZE_MB=0` disables the cap.
 - `server/usage.js` `computeUsage()` walks folders (recursive `dirSize`, skips symlinks) to
   total bytes **per role** (role.folders) and **per user** (their extraFolders / personal
   folder). Shared role space is attributed to the role, not duplicated onto each member.

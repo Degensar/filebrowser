@@ -243,6 +243,13 @@ Both reports are backed by an append-only log at `data/audit.log` that records e
 **and download** action. (Downloads are tracked separately from modifications, since they
 don't change anything.)
 
+**Log rotation:** when `data/audit.log` passes `AUDIT_MAX_SIZE_MB` (default 10 MB) it's
+rotated to `audit.log.1`, `.2`, … keeping `AUDIT_MAX_FILES` archives (default 5) — so total
+disk use is bounded at roughly `AUDIT_MAX_SIZE_MB × (AUDIT_MAX_FILES + 1)`. The reports read
+across the current file **and** the kept archives, so rotation doesn't lose recent history.
+Set `AUDIT_MAX_SIZE_MB=0` to disable the cap (unbounded), or `AUDIT_MAX_FILES=0` to keep no
+archives. Both are configured in `.env`.
+
 > Personal folders are named exactly after the username. Avoid creating a user whose name
 > collides with an existing top-level folder (e.g. a department folder), or they'd be given
 > that folder as their "personal" one.
