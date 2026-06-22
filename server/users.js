@@ -121,14 +121,15 @@ export function effectiveWriteRoots(user) {
 }
 
 // Roles for which this user is a department head (主管). A head can manage the
-// role's folders regardless of the role's `canEdit` flag.
+// role's folders regardless of the role's `canEdit` flag. The authoritative
+// definition of "heads a role" is membership in `role.leaders` — independent of
+// whether the user is also assigned the role — so it stays consistent with the
+// server-side check in dept.js `authorizeHead` (single source of truth).
 export function headedRoles(user) {
   if (!user || user.admin) return [];
-  const map = rolesMap();
-  return (user.roleNames || []).filter((rn) => {
-    const role = map[rn];
-    return role && (role.leaders || []).includes(user.username);
-  });
+  return Object.values(rolesMap())
+    .filter((role) => (role.leaders || []).includes(user.username))
+    .map((role) => role.name);
 }
 
 // Classify a non-admin user's accessible top-level folders into Synology-style
