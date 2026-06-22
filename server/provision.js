@@ -29,9 +29,10 @@ async function ensureFolder(name) {
   return '/' + seg;
 }
 
-// Make sure the hardcoded employee role exists.
+// Make sure the hardcoded employee role exists. It is created editable so every
+// verified employee can edit the shared "/員工" folder (upload/replace/delete).
 export function ensureEmployeeRole() {
-  if (!findRole(EMPLOYEE_ROLE)) addRole(EMPLOYEE_ROLE, [], false);
+  if (!findRole(EMPLOYEE_ROLE)) addRole(EMPLOYEE_ROLE, [], true);
 }
 
 // Ensure a role's shared folder exists and is part of the role's folder list.

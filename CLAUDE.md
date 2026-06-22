@@ -45,6 +45,9 @@ strings (server error messages too).
   added to `員工` (or any role change), `provisionUser` (called from `admin.js` and the
   `assign-role` CLI) creates their personal **`/<username>`** folder, granted only to them
   (writable) — so only they + admins see it. They also get the role's shared **`/員工`** folder.
+  The `員工` role is created **editable** (`canEdit: true`, via `ensureEmployeeRole`), so every
+  verified employee can edit (upload/replace/delete) the shared `/員工` folder. (Existing
+  deployments whose `員工` was read-only: run `npm run role set-edit 員工 true` once.)
 - `auth.accountInfo()` exposes a **`personalFolder`** field (`/<username>` or `null`); the
   frontend renders a **📁 我的文件夹** top-bar button that jumps there (hidden when `null`).
 - **Every role** gets a shared folder **`/<roleName>`** auto-created and added to the role's
