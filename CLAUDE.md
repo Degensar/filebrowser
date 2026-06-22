@@ -35,17 +35,6 @@ strings (server error messages too).
   are blocked in China. Everything must be self-hosted. Fonts use a Chinese-friendly system
   stack (Microsoft YaHei / PingFang). Dates use the `zh-CN` locale.
 
-## HTTPS
-
-The server runs over **HTTPS by default** (`server/index.js` → `https.createServer`). Cert
-resolution is in `server/tls.js`: explicit `TLS_CERT_FILE`/`TLS_KEY_FILE` from `.env` win;
-otherwise a self-signed cert is generated once (via the `selfsigned` pkg) and cached in
-`data/tls/`. Cookies are `Secure` whenever HTTPS is on (`config.secureCookies`). Set
-`TLS_DISABLE=true` only when a reverse proxy terminates TLS. Optional `HTTP_REDIRECT_PORT`
-runs a tiny 301-redirect listener. Self-signed certs trigger a browser warning — expected.
-
-> The Preview/headless tooling may reject the self-signed cert — test HTTPS with `curl -k`.
-
 ## Auto-provisioned folders (roles & employees)
 
 `server/provision.js` creates real folders under the share root and wires up grants:
@@ -115,9 +104,8 @@ Two layers: **read access** (which folders you can see/download) and **write/edi
 
 ```
 server/
-  index.js   HTTPS/HTTP server, static hosting, startup provisioning
-  config.js  Loads/validates .env (SHARE_ROOT, JWT_SECRET, TLS_*, ...)
-  tls.js     Loads explicit cert or generates/caches a self-signed one
+  index.js   HTTP server, static hosting, startup provisioning
+  config.js  Loads/validates .env (SHARE_ROOT, JWT_SECRET, ...)
   provision.js  Auto-creates role/personal folders + grants (員工 role logic)
   paths.js   normRoot / normFolders (shared path helpers)
   roles.js   roles store (data/roles.json)
@@ -175,7 +163,7 @@ public/      index.html + styles.css + app.js  (login/register, browser, admin p
 - Start: `npm start` (port from `.env`, default 3000). Stop: Ctrl+C, or kill the process on
   the port (`Get-NetTCPConnection -LocalPort 3000 ... Stop-Process`).
 - On this dev machine `.env` `SHARE_ROOT` points at `C:\working\testing folder`; real deploys
-  use the `\\fileserver\shared` UNC path. `data/*.json` and `data/tls/` are gitignored.
+  use the `\\fileserver\shared` UNC path. `data/*.json` is gitignored and may be reset.
 - **Do NOT wipe `data/users.json` / `data/roles.json`** — they hold the user's real accounts.
   Clean up only the specific test users/roles you create (via `npm run user/role remove`).
 - Manual end-to-end testing has been done via curl + the Preview tool (login/register,

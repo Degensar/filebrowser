@@ -3,7 +3,6 @@
 A simple, clean web app for staff to **browse and download** files from a company
 Windows / SMB file share. Each person logs in with their own account.
 
-- 🔒 **HTTPS** out of the box (auto self-signed cert, or bring your own)
 - 🔐 Login required (app-managed accounts, bcrypt-hashed passwords)
 - 📁 Browse folders with breadcrumb navigation
 - 🔎 Filter files in the current folder
@@ -22,8 +21,7 @@ Windows / SMB file share. Each person logs in with their own account.
   official Node 18+ binaries require glibc 2.28 and will not start there. Node 16 runs the
   app fully. On newer systems, any current LTS is fine.
 - **Client browsers:** the UI is plain ES2017 (no build step) — works on Firefox 60+
-  (incl. RHEL 7's Firefox ESR), modern Chrome/Edge, etc. HTTPS needs the client to support
-  TLS 1.2 (anything from ~2014 onward).
+  (incl. RHEL 7's Firefox ESR), modern Chrome/Edge, etc.
 
 ## Quick start
 
@@ -112,37 +110,19 @@ admin.
 
 ## Configuration (`.env`)
 
-| Setting             | What it does                                                              |
-| ------------------- | ------------------------------------------------------------------------ |
-| `PORT`              | Port the web app listens on (default `3000`).                            |
-| `SHARE_ROOT`        | The folder to expose. Use the UNC path for an SMB share, e.g. `\\fileserver\shared`. |
-| `JWT_SECRET`        | Long random string used to sign login cookies. **Must be changed.**      |
-| `SESSION_HOURS`     | How long a login stays valid (default `12`).                            |
-| `TLS_CERT_FILE` / `TLS_KEY_FILE` | Optional paths to a real PEM cert/key. If unset, a self-signed cert is generated. |
-| `HTTP_REDIRECT_PORT`| Optional. Run an HTTP listener on this port that 301-redirects to HTTPS (e.g. `80`). |
-| `TLS_DISABLE`       | Set `true` only if a reverse proxy (IIS/Nginx) terminates TLS and the app should serve plain HTTP. |
+| Setting          | What it does                                                                 |
+| ---------------- | --------------------------------------------------------------------------- |
+| `PORT`           | Port the web app listens on (default `3000`).                               |
+| `SHARE_ROOT`     | The folder to expose. Use the UNC path for an SMB share, e.g. `\\fileserver\shared`. A local path like `C:\working` also works (handy for testing). |
+| `JWT_SECRET`     | Long random string used to sign login cookies. **Must be changed.**         |
+| `SESSION_HOURS`  | How long a login stays valid (default `12`).                                |
+| `SECURE_COOKIES` | Set `true` only when the app is served over HTTPS (e.g. behind a TLS-terminating reverse proxy). |
 
 Generate a strong `JWT_SECRET`:
 
 ```powershell
 node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 ```
-
----
-
-## HTTPS
-
-The app serves **HTTPS by default** — open it at **`https://<host>:3000`**.
-
-- **No cert configured?** On first start it generates a **self-signed** certificate and
-  caches it in `data/tls/`. Browsers show a one-time "not private" warning for self-signed
-  certs — click through to proceed (or, better, install the cert as trusted on staff machines).
-- **Production:** point `TLS_CERT_FILE` / `TLS_KEY_FILE` at a real certificate (e.g. from your
-  internal CA or Let's Encrypt) for a warning-free experience.
-- **Behind a reverse proxy** that already does TLS? Set `TLS_DISABLE=true` so the app serves
-  HTTP locally and the proxy handles HTTPS.
-
-Login cookies are automatically marked `Secure` whenever HTTPS is on.
 
 ---
 
@@ -370,9 +350,8 @@ reboot. Put it behind IIS/Nginx with HTTPS and set `SECURE_COOKIES=true`.
 filebrowser/
   CLAUDE.md      Project memory / architecture notes
   server/
-    index.js     HTTPS/HTTP server + static hosting + startup provisioning
-    config.js    Loads/validates .env (incl. TLS settings)
-    tls.js       Loads a real cert or generates/caches a self-signed one
+    index.js     HTTP server + static hosting + startup provisioning
+    config.js    Loads/validates .env
     provision.js Auto-creates role/personal folders (員工 role logic)
     paths.js     Shared path-normalization helpers (normRoot / normFolders)
     roles.js     Role store (data/roles.json) — named bundles of folders
