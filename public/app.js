@@ -47,6 +47,9 @@ function showApp() {
   $('admin-btn').classList.toggle('hidden', !(state.account && state.account.isAdmin));
   // "我的文件夹" shortcut: only when the user has a personal folder.
   $('myfolder-btn').classList.toggle('hidden', !(state.account && state.account.personalFolder));
+  // "部门管理" shortcut: only for department heads (主管 of at least one role).
+  const heads = state.account && state.account.headOf ? state.account.headOf : [];
+  $('dept-btn').classList.toggle('hidden', !(heads && heads.length));
 }
 
 // ---------- Auth (login / register toggle) ----------
@@ -102,6 +105,8 @@ $('login-form').addEventListener('submit', async (e) => {
 $('myfolder-btn').addEventListener('click', () => {
   if (state.account && state.account.personalFolder) navigate(state.account.personalFolder);
 });
+
+$('dept-btn').addEventListener('click', openDeptModal);
 
 $('logout-btn').addEventListener('click', async () => {
   try {
@@ -828,6 +833,123 @@ function openRoleModal(role) {
     }
   });
   openModal(isEdit ? `编辑角色：${role.name}` : '新建角色', body, save);
+}
+
+// ---------- Department management (for department heads / 主管) ----------
+// A head can add/remove members of the departments they lead and grant members
+// edit rights within the department's folders. The server enforces that the
+// caller may only touch departments they head (see server/dept.js).
+async function openDeptModal() {
+  const result = el('div', {});
+  const body = el('div', {},
+    el('p', { className: 'modal-note', textContent:
+      '管理您负责的部门：添加或移除成员，并可授予成员在部门文件夹中的编辑权限（上传 / 替换 / 删除）。' }),
+    result
+  );
+  openModal('部门管理', body, null);
+  $('modal').classList.add('wide');
+
+  async function load() {
+    result.innerHTML = '';
+    result.append(el('p', { className: 'modal-note', textContent: '正在加载…' }));
+    try {
+      const data = await api('/api/dept/mine');
+      result.innerHTML = '';
+      if (!data.departments.length) {
+        result.append(el('div', { className: 'folder-empty', textContent: '您目前不是任何部门的主管。' }));
+        return;
+      }
+      for (const dept of data.departments) result.append(renderDept(dept, load));
+    } catch (e) {
+      result.innerHTML = '';
+      result.append(el('div', { className: 'modal-error', textContent: e.message }));
+    }
+  }
+  load();
+}
+
+function renderDept(dept, reload) {
+  const wrap = el('section', { className: 'dept-block' });
+  wrap.append(el('div', { className: 'drive-head' },
+    el('span', { className: 'drive-icon', textContent: '👑' }),
+    el('span', { className: 'drive-title', textContent: dept.name }),
+    el('span', { className: 'drive-hint', textContent: dept.folders.join('  ') || '（无文件夹）' })
+  ));
+  if (dept.canEdit) {
+    wrap.append(el('p', { className: 'modal-note', textContent: '该部门已对所有成员开放编辑权限。' }));
+  }
+
+  const table = el('table', { className: 'report-table' });
+  table.append(el('thead', {}, el('tr', {},
+    el('th', { textContent: '成员' }),
+    el('th', { textContent: '可编辑部门文件夹' }),
+    el('th', { textContent: '操作' })
+  )));
+  const tbody = el('tbody');
+  if (!dept.members.length) {
+    tbody.append(el('tr', {}, el('td', { colSpan: 3, className: 'report-empty', textContent: '该部门暂无成员。' })));
+  }
+  for (const m of dept.members) {
+    const nameCell = el('td', { className: 'report-name' }, el('span', { textContent: m.username }));
+    if (m.isLeader) nameCell.append(el('span', { className: 'edit-badge', textContent: '主管' }));
+
+    // When the role is editable for everyone, or the member is a head, the
+    // per-member toggle is moot — show it checked and locked.
+    const locked = dept.canEdit || m.isLeader;
+    const editCb = el('input', { type: 'checkbox', checked: locked || m.isEditor, disabled: locked });
+    editCb.addEventListener('change', async () => {
+      editCb.disabled = true;
+      try {
+        await api(`/api/dept/${encodeURIComponent(dept.name)}/members/${encodeURIComponent(m.username)}`, {
+          method: 'PUT',
+          body: JSON.stringify({ editor: editCb.checked }),
+        });
+      } catch (e) {
+        alert(e.message);
+      }
+      reload();
+    });
+
+    const actCell = el('td', {});
+    if (m.isLeader) {
+      actCell.append(el('span', { className: 'admin-dim', textContent: '—' }));
+    } else {
+      actCell.append(mkBtn('移除', 'btn-mini btn-danger', async () => {
+        if (!confirm(`将“${m.username}”移出部门“${dept.name}”？该用户将失去对部门文件夹的访问权限。`)) return;
+        try {
+          await api(`/api/dept/${encodeURIComponent(dept.name)}/members/${encodeURIComponent(m.username)}`, { method: 'DELETE' });
+          reload();
+        } catch (e) {
+          alert(e.message);
+        }
+      }));
+    }
+    tbody.append(el('tr', {}, nameCell, el('td', {}, editCb), actCell));
+  }
+  table.append(tbody);
+  wrap.append(table);
+
+  if (dept.candidates.length) {
+    const sel = el('select', { className: 'modal-input inline' });
+    sel.append(el('option', { value: '', textContent: '选择要添加的用户…' }));
+    for (const c of dept.candidates) sel.append(el('option', { value: c, textContent: c }));
+    const addBtn = mkBtn('添加成员', 'btn-mini', async () => {
+      if (!sel.value) return;
+      try {
+        await api(`/api/dept/${encodeURIComponent(dept.name)}/members`, {
+          method: 'POST',
+          body: JSON.stringify({ username: sel.value }),
+        });
+        reload();
+      } catch (e) {
+        alert(e.message);
+      }
+    });
+    wrap.append(el('div', { className: 'dept-add' }, sel, addBtn));
+  } else {
+    wrap.append(el('div', { className: 'folder-empty', textContent: '没有可添加的用户。' }));
+  }
+  return wrap;
 }
 
 // ---------- Storage usage report ----------

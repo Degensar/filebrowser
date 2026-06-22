@@ -438,6 +438,26 @@ td.col-action > * {
   font-size: 12px;
 }
 
+/* ---------- Department management (head) ---------- */
+.dept-block {
+  margin-bottom: 26px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--border);
+}
+.dept-block:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+.dept-block .drive-head {
+  margin-bottom: 10px;
+}
+.dept-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 /* ---------- Buttons ---------- */
 .btn-primary {
   background: var(--accent);

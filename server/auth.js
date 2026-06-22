@@ -8,6 +8,7 @@ import {
   countUsers,
   isAdmin,
   effectiveRoots,
+  headedRoles,
 } from './users.js';
 
 const COOKIE_NAME = 'fb_session';
@@ -40,6 +41,8 @@ function accountInfo(user) {
     // A non-admin has access only if their roles/extra folders resolve to something.
     hasAccess: admin || effectiveRoots(user).length > 0,
     personalFolder,
+    // Departments this user heads (主管) — non-empty enables the 部门管理 button.
+    headOf: headedRoles(user),
   };
 }
 

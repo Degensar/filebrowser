@@ -70,6 +70,29 @@ folder cards, with a **可管理** badge on cards the user may edit (e.g. a depa
 folder). Empty for everyone ⇒ the existing 🔒 no-access state. **Admins keep the full-share
 table at `/`** (they browse everything; the grouping is for ordinary users).
 
+## Delegated department management (department heads)
+
+A **department head** (主管 — a non-admin in `role.leaders`) can manage access *for the
+departments they lead*, without being a full admin. `server/dept.js` exposes `/api/dept/*`
+(auth required, **not** admin-only); each route re-checks that the caller heads the target
+role (`authorizeHead`). A head can: add/remove **ordinary members** (assign/unassign the
+role) and toggle a member's **editor** status (`role.editors`, granting write on the
+department's folders). The frontend shows a **👑 部门管理** top-bar button when
+`accountInfo.headOf` (= `users.headedRoles`) is non-empty; it opens a modal (`openDeptModal`
+in `app.js`) listing each headed department with its members and an add-member picker.
+
+**Security scoping — heads cannot escalate.** A head may only touch roles they lead, and only
+membership + the editor flag. They **cannot**: change the admin flag or modify any admin
+account (every dept route rejects admin targets), grant leadership (`role.leaders` is
+admin-only), grant folders outside the department, remove a fellow head, or act on roles they
+don't head. A head's reach is bounded by their own department's folders — so a head is only
+as powerful as the folders an admin assigned to that department (caveat: a department whose
+folders include `/` would let its head grant broad access; don't put `/` on a led role).
+
+API: `GET /api/dept/mine`, `POST /api/dept/:role/members` (`{username}`),
+`DELETE /api/dept/:role/members/:username`, `PUT /api/dept/:role/members/:username`
+(`{editor}`).
+
 ## How files are accessed (SMB)
 
 There is **no SMB library**. On Windows the UNC path *is* the binding: `SHARE_ROOT` in
@@ -88,14 +111,17 @@ Two layers: **read access** (which folders you can see/download) and **write/edi
   who can manage (upload/replace/delete) the role's folders **even when `canEdit` is false** —
   this is how a head of department gets write rights to their department folder while ordinary
   members stay read-only. Managed in the role modal (a non-admin user checklist) and via
-  `npm run role set-heads <role> [users...]`.
+  `npm run role set-heads <role> [users...]`. Roles also carry `editors[]` — members a
+  **department head** has granted edit rights to (see *Delegated department management* below);
+  they too get write on the role's folders.
 - **Users** (`data/users.json`): each has `admin` (bool), `roleNames[]`, and
   `extraFolders[]` — where each extra folder is `{ path, write }` (per-folder edit toggle).
 - **Effective READ access** (non-admin) = union of all assigned roles' folders **+** the
   user's extra-folder paths. → `users.effectiveRoots()`.
 - **Effective WRITE access** (non-admin) = folders of **edit-enabled roles** (`canEdit`)
-  **+** folders of roles where the user is a **department head** (`role.leaders` includes them)
-  **+** extra folders where `write === true`. → `users.effectiveWriteRoots()`.
+  **+** folders of roles where the user is a **department head** (`role.leaders`) **or a
+  head-granted editor** (`role.editors`) **+** extra folders where `write === true`.
+  → `users.effectiveWriteRoots()`.
 - Admins always get the whole share (`["/"]`) for both read and write.
 - These two functions in `users.js` are the single source of truth used by `files.js`.
 - Folder paths are normalized to `/a/b` by `paths.js` (`normRoot`, `normFolders`); `/` means
@@ -131,6 +157,7 @@ server/
   users.js   user store + effectiveRoots() + describeAccess()
   auth.js    login / register / logout, requireAuth, requireAdmin
   admin.js   admin-only API: users + roles CRUD
+  dept.js    delegated department management API for department heads (主管)
   files.js   listing + download, per-user permission checks, traversal guard
 scripts/
   manage-users.js   `npm run user ...`  (accounts, role assignment, extra folders)

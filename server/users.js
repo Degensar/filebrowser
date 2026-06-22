@@ -108,7 +108,13 @@ export function effectiveWriteRoots(user) {
   for (const rn of user.roleNames || []) {
     const role = map[rn];
     if (!role) continue;
-    if (role.canEdit || (role.leaders || []).includes(user.username)) all.push(...role.folders);
+    // A member can edit the role's folders if the role is editable for everyone,
+    // if they are a department head (主管), or if a head granted them edit rights.
+    const canWriteRole =
+      role.canEdit ||
+      (role.leaders || []).includes(user.username) ||
+      (role.editors || []).includes(user.username);
+    if (canWriteRole) all.push(...role.folders);
   }
   for (const f of user.extraFolders || []) if (f.write) all.push(f.path);
   return normFolders(all);

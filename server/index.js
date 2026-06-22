@@ -6,6 +6,7 @@ import { config } from './config.js';
 import { authRouter } from './auth.js';
 import { filesRouter } from './files.js';
 import { adminRouter } from './admin.js';
+import { deptRouter } from './dept.js';
 import { listUsers } from './users.js';
 import { provisionStartup } from './provision.js';
 
@@ -19,6 +20,7 @@ app.use(cookieParser());
 // API routes
 app.use('/api/auth', authRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/dept', deptRouter);
 app.use('/api', filesRouter);
 
 // Static frontend
