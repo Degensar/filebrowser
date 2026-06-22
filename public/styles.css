@@ -357,6 +357,87 @@ td.col-action > * {
   }
 }
 
+/* ---------- Synology-style drive home ---------- */
+.drive-home {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  padding-top: 6px;
+}
+.drive-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.drive-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.drive-icon {
+  font-size: 18px;
+}
+.drive-title {
+  font-size: 16px;
+  font-weight: 700;
+}
+.drive-hint {
+  color: var(--muted);
+  font-size: 12px;
+}
+.drive-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 14px;
+}
+.drive-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 16px 14px;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+  transition: border-color 0.12s, box-shadow 0.12s, transform 0.12s;
+}
+.drive-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.12);
+  transform: translateY(-1px);
+}
+.drive-card-icon {
+  font-size: 30px;
+}
+.drive-card-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.drive-card-meta {
+  color: var(--muted);
+  font-size: 12px;
+}
+.drive-card-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #dcfce7;
+  color: #15803d;
+}
+.role-heads {
+  margin-top: 4px;
+  color: #92600a;
+  font-size: 12px;
+}
+
 /* ---------- Buttons ---------- */
 .btn-primary {
   background: var(--accent);

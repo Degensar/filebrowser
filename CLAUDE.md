@@ -57,6 +57,19 @@ strings (server error messages too).
 - **Caveat:** a personal folder is `/<username>`; if a username collides with an existing
   top-level folder name, the user would gain access to it. Usernames are `[a-z0-9._-]`.
 
+## Home view — Synology-style "drives" (non-admin)
+
+A non-admin user's home (`GET /api/files?path=/`) is a **virtual home** that groups their
+accessible top-level folders into Synology-Drive-style sections instead of a flat list:
+**我的文件** (personal `/<username>` folder), **部门 / 团队文件夹** (folders from their
+roles), and **共享文件夹** (extra folders granted directly, outside any role). The split is
+computed by `users.driveSections(user)` (paths only); `files.js` stats each for mtime and adds
+a `write` flag (`isAllowed(path, effectiveWriteRoots)`). The response carries a `drives` array
+(`{key,title,icon,hint,entries[]}`); `app.js` `renderDrives()` draws each section as a grid of
+folder cards, with a **可管理** badge on cards the user may edit (e.g. a department head's
+folder). Empty for everyone ⇒ the existing 🔒 no-access state. **Admins keep the full-share
+table at `/`** (they browse everything; the grouping is for ordinary users).
+
 ## How files are accessed (SMB)
 
 There is **no SMB library**. On Windows the UNC path *is* the binding: `SHARE_ROOT` in
@@ -70,12 +83,18 @@ Two layers: **read access** (which folders you can see/download) and **write/edi
 (upload / replace / delete inside a folder). Write is always a subset of read.
 
 - **Roles** (`data/roles.json`): a named bundle of folders, e.g. `销售部 → [/Sales, /Reports]`,
-  plus a `canEdit` boolean. If `canEdit` is true, members can edit that role's folders.
+  plus a `canEdit` boolean and a `leaders[]` list. If `canEdit` is true, **all** members can
+  edit that role's folders. `leaders[]` (部门主管 / department heads) is a list of usernames
+  who can manage (upload/replace/delete) the role's folders **even when `canEdit` is false** —
+  this is how a head of department gets write rights to their department folder while ordinary
+  members stay read-only. Managed in the role modal (a non-admin user checklist) and via
+  `npm run role set-heads <role> [users...]`.
 - **Users** (`data/users.json`): each has `admin` (bool), `roleNames[]`, and
   `extraFolders[]` — where each extra folder is `{ path, write }` (per-folder edit toggle).
 - **Effective READ access** (non-admin) = union of all assigned roles' folders **+** the
   user's extra-folder paths. → `users.effectiveRoots()`.
 - **Effective WRITE access** (non-admin) = folders of **edit-enabled roles** (`canEdit`)
+  **+** folders of roles where the user is a **department head** (`role.leaders` includes them)
   **+** extra folders where `write === true`. → `users.effectiveWriteRoots()`.
 - Admins always get the whole share (`["/"]`) for both read and write.
 - These two functions in `users.js` are the single source of truth used by `files.js`.
@@ -131,7 +150,7 @@ public/      index.html + styles.css + app.js  (login/register, browser, admin p
   - `GET/POST /api/admin/users`, `PUT/DELETE /api/admin/users/:username`,
     `POST /api/admin/users/:username/password`
     (`PUT` body: `{ admin?, roleNames?, extraFolders:[{path,write}] }`)
-  - `GET/POST /api/admin/roles`, `PUT /api/admin/roles/:name` (`{folders?, canEdit?}`),
+  - `GET/POST /api/admin/roles`, `PUT /api/admin/roles/:name` (`{folders?, canEdit?, leaders?}`),
     `DELETE /api/admin/roles/:name`
   - `GET /api/admin/usage` — storage bytes per role + per user (`usage.js`, walks the share)
   - `GET /api/admin/activity?days=1|7|30|all` — write-action counts per user (`audit.js`)

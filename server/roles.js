@@ -22,12 +22,26 @@ function validName(name) {
   return n;
 }
 
+// Normalize a role's "department heads" list: lowercase usernames, de-duped.
+// These users may manage (upload/replace/delete) the role's folders even when
+// the role is not editable for ordinary members.
+function normLeaders(leaders) {
+  if (!Array.isArray(leaders)) return [];
+  const seen = new Set();
+  for (const l of leaders) {
+    const u = String(l || '').trim().toLowerCase();
+    if (u) seen.add(u);
+  }
+  return [...seen].sort();
+}
+
 export function listRoles() {
   ensureStore();
   const roles = JSON.parse(fs.readFileSync(ROLES_FILE, 'utf8'));
   for (const r of roles) {
     if (!Array.isArray(r.folders)) r.folders = [];
     if (typeof r.canEdit !== 'boolean') r.canEdit = false; // back-compat
+    if (!Array.isArray(r.leaders)) r.leaders = []; // back-compat: department heads
   }
   return roles;
 }
@@ -49,7 +63,7 @@ export function findRole(name) {
   return listRoles().find((r) => r.name === n) || null;
 }
 
-export function addRole(name, folders = [], canEdit = false) {
+export function addRole(name, folders = [], canEdit = false, leaders = []) {
   const n = validName(name);
   const roles = listRoles();
   if (roles.some((r) => r.name === n)) throw new Error(`角色“${n}”已存在。`);
@@ -57,20 +71,23 @@ export function addRole(name, folders = [], canEdit = false) {
     name: n,
     folders: normFolders(folders),
     canEdit: !!canEdit,
+    leaders: normLeaders(leaders),
     createdAt: new Date().toISOString(),
   });
   saveRoles(roles);
   return n;
 }
 
-// Update a role's folders and/or its edit capability. Pass undefined to leave a field as-is.
-export function updateRole(name, { folders, canEdit } = {}) {
+// Update a role's folders, edit capability, and/or department heads.
+// Pass undefined to leave a field as-is.
+export function updateRole(name, { folders, canEdit, leaders } = {}) {
   const n = String(name || '').trim();
   const roles = listRoles();
   const role = roles.find((r) => r.name === n);
   if (!role) throw new Error(`未找到角色“${n}”。`);
   if (folders !== undefined) role.folders = normFolders(folders);
   if (canEdit !== undefined) role.canEdit = !!canEdit;
+  if (leaders !== undefined) role.leaders = normLeaders(leaders);
   saveRoles(roles);
   return role;
 }

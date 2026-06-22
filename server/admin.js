@@ -91,9 +91,14 @@ adminRouter.get('/roles', (req, res) => {
 });
 
 adminRouter.post('/roles', async (req, res) => {
-  const { name, folders, canEdit } = req.body || {};
+  const { name, folders, canEdit, leaders } = req.body || {};
   try {
-    const created = addRole(name, Array.isArray(folders) ? folders : [], !!canEdit);
+    const created = addRole(
+      name,
+      Array.isArray(folders) ? folders : [],
+      !!canEdit,
+      Array.isArray(leaders) ? leaders : []
+    );
     await ensureRoleFolder(created); // create the role's shared folder "/<name>"
     res.json({ ok: true, role: findRole(created) });
   } catch (e) {
@@ -101,11 +106,11 @@ adminRouter.post('/roles', async (req, res) => {
   }
 });
 
-// Update a role's folders and/or its edit capability.
+// Update a role's folders, edit capability, and/or department heads (主管).
 adminRouter.put('/roles/:name', (req, res) => {
-  const { folders, canEdit } = req.body || {};
+  const { folders, canEdit, leaders } = req.body || {};
   try {
-    const role = updateRole(req.params.name, { folders, canEdit });
+    const role = updateRole(req.params.name, { folders, canEdit, leaders });
     res.json({ ok: true, role });
   } catch (e) {
     res.status(400).json({ error: e.message });

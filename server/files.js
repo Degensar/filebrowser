@@ -4,7 +4,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { config } from './config.js';
 import { requireAuth } from './auth.js';
-import { findUser, effectiveRoots, effectiveWriteRoots } from './users.js';
+import { findUser, effectiveRoots, effectiveWriteRoots, driveSections } from './users.js';
 import { normRoot } from './paths.js';
 import { logAction } from './audit.js';
 
@@ -84,26 +84,70 @@ function buildBreadcrumb(relPath, roots) {
   return crumbs;
 }
 
-// ---- Virtual home for restricted users ----------------------------------
+// ---- Virtual home for restricted users (Synology-style "drives") ---------
 
-// Lists the user's allowed folders as top-level entries.
-async function virtualHome(roots) {
-  const entries = await Promise.all(
-    roots.map(async (r) => {
-      let mtime = null;
-      try {
-        const s = await fsp.stat(resolveSafe(r));
-        mtime = s.mtimeMs;
-      } catch {
-        // Folder offline or removed — still list it so the user knows it exists.
-      }
-      return { name: path.basename(r) || r, type: 'dir', size: 0, mtime, path: r };
-    })
-  );
-  entries.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+// Build one folder card entry: stat for mtime, mark whether the user may edit it.
+async function driveEntry(rel, writeRoots) {
+  let mtime = null;
+  try {
+    const s = await fsp.stat(resolveSafe(rel));
+    mtime = s.mtimeMs;
+  } catch {
+    // Folder offline or removed — still list it so the user knows it exists.
+  }
+  return {
+    name: path.basename(rel) || rel,
+    type: 'dir',
+    size: 0,
+    mtime,
+    path: rel,
+    write: isAllowed(rel, writeRoots),
+  };
+}
+
+const byName = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+
+// Lists the user's allowed folders grouped into 我的文件 / 部门文件夹 / 共享文件夹,
+// like Synology Drive. Each section's entries carry a `write` flag so the UI can
+// show a "可管理" badge (e.g. for a department head).
+async function virtualHome(user) {
+  const writeRoots = effectiveWriteRoots(user);
+  const { personal, team, shared } = driveSections(user);
+  const sections = [];
+
+  if (personal) {
+    sections.push({
+      key: 'personal',
+      title: '我的文件',
+      icon: '🗂️',
+      hint: '只有您和管理员可以看到',
+      entries: [await driveEntry(personal, writeRoots)],
+    });
+  }
+  if (team.length) {
+    const entries = (await Promise.all(team.map((r) => driveEntry(r, writeRoots)))).sort(byName);
+    sections.push({
+      key: 'team',
+      title: '部门 / 团队文件夹',
+      icon: '👥',
+      hint: '通过您的角色共享给团队成员',
+      entries,
+    });
+  }
+  if (shared.length) {
+    const entries = (await Promise.all(shared.map((r) => driveEntry(r, writeRoots)))).sort(byName);
+    sections.push({
+      key: 'shared',
+      title: '共享文件夹',
+      icon: '🔗',
+      hint: '管理员单独授予您的文件夹',
+      entries,
+    });
+  }
+
   return {
     path: '/',
-    entries,
+    drives: sections,
     breadcrumb: [{ label: '主目录', path: '/', home: true }],
   };
 }
@@ -125,10 +169,11 @@ filesRouter.get('/files', async (req, res) => {
   }
   const relReq = toRelative(abs);
 
-  // Restricted users at "/" get the virtual home (their allowed folders).
+  // Restricted users at "/" get the virtual home (their allowed folders,
+  // grouped into Synology-style drives).
   if (!hasFullAccess(roots) && relReq === '/') {
     try {
-      return res.json(await virtualHome(roots));
+      return res.json(await virtualHome(findUser(req.user)));
     } catch (e) {
       console.error('[files] virtual home error:', e);
       return res.status(500).json({ error: '无法加载可访问的文件夹。' });

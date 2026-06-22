@@ -128,9 +128,15 @@ async function navigate(path) {
   try {
     const data = await api(`/api/files?path=${encodeURIComponent(path)}`);
     state.path = data.path;
-    state.entries = data.entries;
+    state.entries = data.entries || [];
     state.canWrite = !!data.canWrite;
     renderBreadcrumb(data.breadcrumb);
+    // Synology-style home: the server groups the user's folders into drives.
+    if (data.drives) {
+      renderDrives(data.drives);
+      $('upload-status').textContent = '';
+      return;
+    }
     renderList(data.entries);
     // Show the upload toolbar wherever the user may edit. The server only sets
     // canWrite on real folder listings (a restricted user's virtual home never
@@ -143,7 +149,7 @@ async function navigate(path) {
 }
 
 function setState(which) {
-  for (const id of ['loading', 'error', 'empty', 'no-access', 'file-table']) {
+  for (const id of ['loading', 'error', 'empty', 'no-access', 'file-table', 'drive-home']) {
     $(id).classList.add('hidden');
   }
   if (which) $(which).classList.remove('hidden');
@@ -239,6 +245,46 @@ function renderList(entries) {
     tr.append(nameTd, sizeTd, dateTd, actTd);
     tbody.appendChild(tr);
   }
+}
+
+// Synology-style home: render the user's folders grouped into drive sections
+// (我的文件 / 部门文件夹 / 共享文件夹), each a grid of clickable folder cards.
+function renderDrives(sections) {
+  const home = $('drive-home');
+  home.innerHTML = '';
+  const total = (sections || []).reduce((n, s) => n + s.entries.length, 0);
+  if (total === 0) {
+    // No folders at all: restricted account that hasn't been granted access yet.
+    setState('no-access');
+    return;
+  }
+  for (const section of sections) {
+    if (!section.entries.length) continue;
+    const head = el('div', { className: 'drive-head' },
+      el('span', { className: 'drive-icon', textContent: section.icon || '📁' }),
+      el('span', { className: 'drive-title', textContent: section.title })
+    );
+    if (section.hint) head.append(el('span', { className: 'drive-hint', textContent: section.hint }));
+
+    const grid = el('div', { className: 'drive-grid' });
+    for (const entry of section.entries) {
+      const card = el('div', { className: 'drive-card', title: entry.name });
+      card.append(
+        el('span', { className: 'drive-card-icon', textContent: '📁' }),
+        el('span', { className: 'drive-card-name', textContent: entry.name })
+      );
+      const meta = el('span', { className: 'drive-card-meta' });
+      meta.textContent = entry.mtime ? formatDate(entry.mtime) : '';
+      card.append(meta);
+      if (entry.write) {
+        card.append(el('span', { className: 'drive-card-badge', textContent: '可管理' }));
+      }
+      card.addEventListener('click', () => navigate(entry.path));
+      grid.append(card);
+    }
+    home.append(el('section', { className: 'drive-section' }, head, grid));
+  }
+  setState('drive-home');
 }
 
 // ---------- Write operations in the file browser ----------
@@ -353,6 +399,8 @@ $('search').addEventListener('input', (e) => {
 // All roles, cached for the duration of the admin session, so user modals can
 // render the list of assignable roles.
 let adminRoles = [];
+// All usernames, cached so the role modal can offer them as department heads.
+let adminUsers = [];
 
 $('admin-btn').addEventListener('click', openAdmin);
 $('admin-back-btn').addEventListener('click', () => {
@@ -379,6 +427,7 @@ async function loadAdmin() {
       api('/api/admin/users'),
     ]);
     adminRoles = roles;
+    adminUsers = users;
     renderRoles(roles);
     renderUsers(users);
   } catch (err) {
@@ -399,7 +448,11 @@ function renderRoles(roles) {
     const tr = document.createElement('tr');
     const nameTd = el('td', { className: 'admin-username' }, el('span', { textContent: r.name }));
     if (r.canEdit) nameTd.append(el('span', { className: 'edit-badge', textContent: '可编辑' }));
-    const foldersTd = el('td', { className: 'admin-access', textContent: r.folders.length ? r.folders.join('  ') : '（未指定文件夹）' });
+    const foldersTd = el('td', { className: 'admin-access' });
+    foldersTd.append(el('div', { textContent: r.folders.length ? r.folders.join('  ') : '（未指定文件夹）' }));
+    if (r.leaders && r.leaders.length) {
+      foldersTd.append(el('div', { className: 'role-heads', textContent: '👑 部门主管：' + r.leaders.join('、') }));
+    }
     const actTd = el('td', { className: 'col-admin-actions' });
     actTd.append(
       mkBtn('编辑', 'btn-mini', () => openRoleModal(r)),
@@ -565,6 +618,29 @@ function makeRoleChecklist(selected = []) {
   return { element: box, getSelected: () => boxes.filter((c) => c.checked).map((c) => c.value) };
 }
 
+// A reusable checklist of (non-admin) users for picking department heads.
+// Returns { element, getSelected }. Admins are excluded — they already manage
+// everything, so naming them a department head is meaningless.
+function makeUserChecklist(selected = []) {
+  const box = el('div', { className: 'role-checklist' });
+  const candidates = adminUsers.filter((u) => !u.admin);
+  if (candidates.length === 0) {
+    box.append(el('div', { className: 'folder-empty', textContent: '暂无可选用户（管理员不可设为主管）。' }));
+    return { element: box, getSelected: () => [] };
+  }
+  const boxes = [];
+  for (const u of candidates) {
+    const cb = el('input', { type: 'checkbox', checked: selected.includes(u.username) });
+    cb.value = u.username;
+    boxes.push(cb);
+    box.append(el('label', { className: 'role-check' },
+      cb,
+      el('span', { className: 'role-check-name' }, el('span', { textContent: u.username }))
+    ));
+  }
+  return { element: box, getSelected: () => boxes.filter((c) => c.checked).map((c) => c.value) };
+}
+
 // ---------- New user modal ----------
 function openNewUserModal() {
   const username = el('input', { type: 'text', className: 'modal-input', placeholder: '用户名（字母/数字/.-_）' });
@@ -711,7 +787,10 @@ function openRoleModal(role) {
   folderEditor.element.classList.add('hide-chip-edit');
   const canEditCb = el('input', { type: 'checkbox', checked: isEdit ? !!role.canEdit : false });
   const canEditLabel = el('label', { className: 'check-row' }, canEditCb,
-    el('span', { textContent: '允许该角色编辑其文件夹（上传 / 替换 / 删除）' }));
+    el('span', { textContent: '允许该角色的所有成员编辑其文件夹（上传 / 替换 / 删除）' }));
+  // Department heads (主管): listed members may manage the role's folders even
+  // when the role above is not editable for ordinary members.
+  const headList = makeUserChecklist(isEdit && Array.isArray(role.leaders) ? role.leaders : []);
   const err = el('div', { className: 'modal-error hidden' });
 
   const body = el('div', {},
@@ -719,6 +798,8 @@ function openRoleModal(role) {
     el('p', { className: 'modal-note', textContent: '该角色包含的文件夹（拥有此角色的用户都能访问）：' }),
     folderEditor.element,
     canEditLabel,
+    el('p', { className: 'modal-note', textContent: '部门主管（可管理上述文件夹：上传 / 替换 / 删除，即使未勾选上方“所有成员可编辑”）：' }),
+    headList.element,
     err
   );
 
@@ -726,16 +807,17 @@ function openRoleModal(role) {
   save.addEventListener('click', async () => {
     err.classList.add('hidden');
     const folders = folderEditor.getFolders().map((f) => f.path);
+    const leaders = headList.getSelected();
     try {
       if (isEdit) {
         await api(`/api/admin/roles/${encodeURIComponent(role.name)}`, {
           method: 'PUT',
-          body: JSON.stringify({ folders, canEdit: canEditCb.checked }),
+          body: JSON.stringify({ folders, canEdit: canEditCb.checked, leaders }),
         });
       } else {
         await api('/api/admin/roles', {
           method: 'POST',
-          body: JSON.stringify({ name: nameInput.value, folders, canEdit: canEditCb.checked }),
+          body: JSON.stringify({ name: nameInput.value, folders, canEdit: canEditCb.checked, leaders }),
         });
       }
       closeModal();

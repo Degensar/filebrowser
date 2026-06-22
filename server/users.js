@@ -97,8 +97,9 @@ export function effectiveRoots(user) {
 }
 
 // The effective set of WRITABLE folders (upload / replace / delete).
-// Comes from edit-enabled roles and from extra folders marked writable.
-// Always a subset of effectiveRoots.
+// Comes from edit-enabled roles, from roles where the user is a department head
+// (主管 — they manage that department's folders even if ordinary members can't),
+// and from extra folders marked writable. Always a subset of effectiveRoots.
 export function effectiveWriteRoots(user) {
   if (!user) return [];
   if (user.admin) return ['/'];
@@ -106,10 +107,47 @@ export function effectiveWriteRoots(user) {
   const all = [];
   for (const rn of user.roleNames || []) {
     const role = map[rn];
-    if (role && role.canEdit) all.push(...role.folders);
+    if (!role) continue;
+    if (role.canEdit || (role.leaders || []).includes(user.username)) all.push(...role.folders);
   }
   for (const f of user.extraFolders || []) if (f.write) all.push(f.path);
   return normFolders(all);
+}
+
+// Roles for which this user is a department head (主管). A head can manage the
+// role's folders regardless of the role's `canEdit` flag.
+export function headedRoles(user) {
+  if (!user || user.admin) return [];
+  const map = rolesMap();
+  return (user.roleNames || []).filter((rn) => {
+    const role = map[rn];
+    return role && (role.leaders || []).includes(user.username);
+  });
+}
+
+// Classify a non-admin user's accessible top-level folders into Synology-style
+// "drives" (paths only — the caller stats them for size/mtime):
+//   - personal: their own "/<username>" folder (the 我的文件 / personal drive)
+//   - team:     folders coming from their assigned roles (部门 / 团队文件夹)
+//   - shared:   extra folders granted directly, outside any role (共享文件夹)
+// A folder that is both a role folder and an extra grant is attributed to team.
+export function driveSections(user) {
+  if (!user || user.admin) return { personal: null, team: [], shared: [] };
+  const map = rolesMap();
+  const personal = '/' + user.username;
+  const teamSet = new Set();
+  for (const rn of user.roleNames || []) {
+    const role = map[rn];
+    if (role) for (const f of role.folders) teamSet.add(f);
+  }
+  const extra = (user.extraFolders || []).map((f) => f.path);
+  const hasPersonal = extra.includes(personal);
+  const shared = extra.filter((p) => p !== personal && !teamSet.has(p));
+  return {
+    personal: hasPersonal ? personal : null,
+    team: [...teamSet].filter((p) => p !== personal).sort(),
+    shared: [...new Set(shared)].sort(),
+  };
 }
 
 // Human-readable read-access summary (Chinese) for CLI / admin display.
