@@ -31,7 +31,7 @@ function issueSession(res, username) {
 function accountInfo(user) {
   const admin = isAdmin(user);
   // The personal folder "/<username>" exists only if it was granted (i.e. the
-  // user has been added to the 員工 role). Admins don't get a personal folder.
+  // user has been added to the 员工 role). Admins don't get a personal folder.
   const personal = '/' + user.username;
   const personalFolder =
     !admin && (user.extraFolders || []).some((f) => f.path === personal) ? personal : null;
@@ -61,7 +61,7 @@ authRouter.post('/login', (req, res) => {
 
 // Self-registration. The first account becomes the admin. Everyone else is
 // created with NO access and NO role — an admin must verify them by adding the
-// "員工" role (or other roles/folders) before they can see any content. This
+// "员工" role (or other roles/folders) before they can see any content. This
 // prevents anyone who registers from reaching company files.
 authRouter.post('/register', (req, res) => {
   const { username, password } = req.body || {};

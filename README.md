@@ -193,10 +193,10 @@ The app creates folders under the share root automatically so structure follows 
   folder named after it is created under the share root and added to the role, so **everyone
   with that role can use it** as a shared space. (Deleting a role does **not** delete its
   folder, to avoid data loss.)
-- **The `員工` (employee) role is built in.** New self-registered accounts get **no access at
-  all** until an **admin verifies them by assigning the `員工` role** (or any other role/folder).
+- **The `员工` (employee) role is built in.** New self-registered accounts get **no access at
+  all** until an **admin verifies them by assigning the `员工` role** (or any other role/folder).
   This stops anyone who registers from reaching company files. The moment an admin adds a user
-  to `員工`, they receive the shared **`/員工`** folder **and a private folder named after their
+  to `员工`, they receive the shared **`/员工`** folder **and a private folder named after their
   username** (`/<username>`) that **only they and admins can see** — their own space to store
   files. (The first-ever account is the admin and is exempt.)
 - Admins keep **full manual control** on top of all this: you can still add or remove any
@@ -352,11 +352,11 @@ filebrowser/
   server/
     index.js     HTTP server + static hosting + startup provisioning
     config.js    Loads/validates .env
-    provision.js Auto-creates role/personal folders (員工 role logic)
+    provision.js Auto-creates role/personal folders (员工 role logic)
     paths.js     Shared path-normalization helpers (normRoot / normFolders)
     roles.js     Role store (data/roles.json) — named bundles of folders
     users.js     User store (bcrypt) + effective-access computation
-    auth.js      Login, register (auto-員工), logout, auth + admin guards
+    auth.js      Login, register (auto-员工), logout, auth + admin guards
     admin.js     Admin-only API: users + roles CRUD + usage/activity reports
     audit.js     Append-only write-action log (data/audit.log) + activity aggregation
     usage.js     Storage-usage computation (bytes per role / per user)

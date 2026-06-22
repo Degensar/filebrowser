@@ -32,7 +32,7 @@ app.get('*', (req, res) => {
 });
 
 async function start() {
-  // Ensure the hardcoded "員工" role and its shared folder exist.
+  // Ensure the hardcoded "员工" role and its shared folder exist.
   await provisionStartup();
 
   app.listen(config.port, () => {

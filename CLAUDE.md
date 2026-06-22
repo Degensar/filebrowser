@@ -39,20 +39,27 @@ strings (server error messages too).
 
 `server/provision.js` creates real folders under the share root and wires up grants:
 
-- **`EMPLOYEE_ROLE = "員工"`** is hardcoded. **New registrants do NOT auto-join it** — they
-  register with zero access; an **admin must add them to `員工`** (panel/CLI) to verify them.
+- **`EMPLOYEE_ROLE = "员工"`** is hardcoded. **New registrants do NOT auto-join it** — they
+  register with zero access; an **admin must add them to `员工`** (panel/CLI) to verify them.
   This is deliberate: self-registration must not grant access to company files. When a user is
-  added to `員工` (or any role change), `provisionUser` (called from `admin.js` and the
+  added to `员工` (or any role change), `provisionUser` (called from `admin.js` and the
   `assign-role` CLI) creates their personal **`/<username>`** folder, granted only to them
-  (writable) — so only they + admins see it. They also get the role's shared **`/員工`** folder.
-  The `員工` role is created **editable** (`canEdit: true`, via `ensureEmployeeRole`), so every
-  verified employee can edit (upload/replace/delete) the shared `/員工` folder. (Existing
-  deployments whose `員工` was read-only: run `npm run role set-edit 員工 true` once.)
+  (writable) — so only they + admins see it. They also get the role's shared **`/员工`** folder.
+  The `员工` role is created **editable** (`canEdit: true`, via `ensureEmployeeRole`), so every
+  verified employee can edit (upload/replace/delete) the shared `/员工` folder. (Existing
+  deployments whose `员工` was read-only: run `npm run role set-edit 员工 true` once.)
+- **Simplified-Chinese migration:** the role was historically named `員工` (Traditional). On
+  startup `migrateEmployeeRoleName()` renames the shared folder on disk (`/員工`→`/员工`,
+  preserving contents), the role, its folder path, and every member's role assignment — once,
+  idempotently. It is **conservative**: if the share is offline or a `员工` role/folder already
+  exists, it skips and retries next boot rather than risk a duplicate role or orphaned files.
+  All user-facing text is Simplified; only `LEGACY_EMPLOYEE_ROLE` + migration logs reference
+  the old name.
 - `auth.accountInfo()` exposes a **`personalFolder`** field (`/<username>` or `null`); the
   frontend renders a **📁 我的文件夹** top-bar button that jumps there (hidden when `null`).
 - **Every role** gets a shared folder **`/<roleName>`** auto-created and added to the role's
   folder list (`ensureRoleFolder`), so all members can access it. Called from role creation
-  in `admin.js` and `manage-roles.js`, and at startup for `員工` (`provisionStartup`).
+  in `admin.js` and `manage-roles.js`, and at startup for `员工` (`provisionStartup`).
 - Folder names are sanitized to a single safe segment (no separators / traversal).
 - Provisioning is **best-effort**: a failure (offline/read-only share) logs a warning but
   never blocks registration or role creation. Deleting a role does **not** delete its folder
@@ -154,7 +161,7 @@ Two layers: **read access** (which folders you can see/download) and **write/edi
 server/
   index.js   HTTP server, static hosting, startup provisioning
   config.js  Loads/validates .env (SHARE_ROOT, JWT_SECRET, ...)
-  provision.js  Auto-creates role/personal folders + grants (員工 role logic)
+  provision.js  Auto-creates role/personal folders + grants (员工 role logic)
   paths.js   normRoot / normFolders (shared path helpers)
   roles.js   roles store (data/roles.json)
   users.js   user store + effectiveRoots() + describeAccess()

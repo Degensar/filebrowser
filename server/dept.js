@@ -76,7 +76,7 @@ deptRouter.post('/:role/members', async (req, res) => {
   if (target.admin) return res.status(400).json({ error: '不能修改管理员账号。' });
   try {
     setUserRoles(target.username, [...new Set([...(target.roleNames || []), role.name])]);
-    await provisionUser(target.username); // personal folder if this is the 員工 role
+    await provisionUser(target.username); // personal folder if this is the 员工 role
     res.json({ ok: true, member: memberRow(findRole(role.name), findUser(target.username)) });
   } catch (e) {
     res.status(400).json({ error: e.message });

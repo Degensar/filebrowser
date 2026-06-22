@@ -96,6 +96,20 @@ export function updateRole(name, { folders, canEdit, leaders, editors } = {}) {
   return role;
 }
 
+// Rename a role in place (keeps its folders/canEdit/leaders/editors). Returns
+// true on success; false if the old role is missing or the new name is taken.
+export function renameRole(oldName, newName) {
+  const from = String(oldName || '').trim();
+  const to = validName(newName);
+  const roles = listRoles();
+  const role = roles.find((r) => r.name === from);
+  if (!role) return false;
+  if (roles.some((r) => r.name === to)) return false;
+  role.name = to;
+  saveRoles(roles);
+  return true;
+}
+
 export function removeRole(name) {
   const n = String(name || '').trim();
   const roles = listRoles();

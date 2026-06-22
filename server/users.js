@@ -266,6 +266,19 @@ function updateUser(username, mutate) {
   return user;
 }
 
+// When a role is renamed, update it in every user's assignments.
+export function renameRoleInUsers(oldName, newName) {
+  const users = listUsers();
+  let changed = false;
+  for (const user of users) {
+    if ((user.roleNames || []).includes(oldName)) {
+      user.roleNames = [...new Set(user.roleNames.map((r) => (r === oldName ? newName : r)))];
+      changed = true;
+    }
+  }
+  if (changed) saveUsers(users);
+}
+
 // When a role is deleted, drop it from every user's assignments.
 export function removeRoleFromAllUsers(roleName) {
   const users = listUsers();
