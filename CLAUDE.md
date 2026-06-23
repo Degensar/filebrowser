@@ -80,6 +80,19 @@ folder cards, with a **可管理** badge on cards the user may edit (e.g. a depa
 folder). Empty for everyone ⇒ the existing 🔒 no-access state. **Admins keep the full-share
 table at `/`** (they browse everything; the grouping is for ordinary users).
 
+## Folder content sizes
+
+Folders show the **recursive total size of their contents** (not just `0`/`—`). This is
+computed **lazily** so the listing still appears instantly: `app.js` renders folders with a
+`…` placeholder, then `fillFolderSizes()` POSTs the folder paths to `POST /api/folder-sizes`,
+which walks each one with `usage.dirSize` (skips symlinks → stays inside the share) under a
+**concurrency cap of 6** so a folder with many sub-folders doesn't hammer the (possibly
+SMB/remote) share. Each requested path is canonicalized + read-permission checked exactly like
+a listing (so a user can never size a folder they can't read). The file browser also shows a
+**folder summary line** (`#folder-summary`: item count + grand total = file sizes ＋ sub-folder
+totals), and drive cards on the home show each drive's size. Sizes are **uncached** (always
+fresh, matching `usage.js`); a stale response from a previous view is ignored via `sizeLoadSeq`.
+
 ## Delegated department management (department heads)
 
 A **department head** (主管 — a non-admin in `role.leaders`) can manage access *for the
@@ -179,6 +192,9 @@ public/      index.html + styles.css + app.js  (login/register, browser, admin p
 
 - `POST /api/auth/{login,register,logout}`, `GET /api/auth/me`
 - `GET /api/files?path=` (returns `canWrite` for the folder), `GET /api/download?path=`
+- `POST /api/folder-sizes` (`{paths:[...]}`) — recursive total bytes per folder, used by the
+  UI to show folder content sizes. Read-only; each path is canonicalized + read-permission
+  checked like a listing (unauthorized/missing/non-dir → `null`); see *Folder content sizes*.
 - Write (auth + write-permission on target):
   - `PUT /api/file?path=` — create/overwrite a file (raw body = bytes; upload & replace)
   - `DELETE /api/file?path=` — delete a file or folder (recursive for folders)

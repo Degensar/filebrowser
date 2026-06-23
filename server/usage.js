@@ -6,9 +6,10 @@ import { config } from './config.js';
 import { listRoles } from './roles.js';
 import { listUsers } from './users.js';
 
-// Recursive size of a directory in bytes. Skips symlinks (avoids loops) and
-// silently ignores entries it can't read.
-async function dirSize(abs) {
+// Recursive size of a directory in bytes. Skips symlinks (avoids loops, and
+// prevents escaping the share via a symlink) and silently ignores entries it
+// can't read.
+export async function dirSize(abs) {
   let total = 0;
   let entries;
   try {

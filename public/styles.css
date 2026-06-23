@@ -418,8 +418,22 @@ td.col-action > * {
   white-space: nowrap;
 }
 .drive-card-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   color: var(--muted);
   font-size: 12px;
+}
+.drive-card-size {
+  font-weight: 600;
+  color: var(--text);
+}
+.drive-card-date {
+  color: var(--muted);
+}
+.size-pending {
+  color: var(--muted);
+  font-weight: 400;
 }
 .drive-card-badge {
   position: absolute;
@@ -548,6 +562,13 @@ td.col-action > * {
 .upload-status {
   color: var(--muted);
   font-size: 13px;
+}
+
+/* ---------- Folder content total ---------- */
+.folder-summary {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0 2px 10px;
 }
 
 /* ---------- Edit capability badges / toggles ---------- */

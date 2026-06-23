@@ -8,6 +8,13 @@ const state = {
   authMode: 'login', // 'login' | 'register'
 };
 
+// Bumped on each listing/home render so a slow folder-size response from a
+// previous view can't overwrite the current folder's summary.
+let sizeLoadSeq = 0;
+// The in-flight folder-size request, aborted when a new view starts so rapid
+// navigation doesn't pile up recursive folder walks on the (possibly SMB) share.
+let sizeAbort = null;
+
 // ---------- API helper ----------
 async function api(url, options = {}) {
   const res = await fetch(url, {
@@ -130,6 +137,7 @@ async function navigate(path) {
   $('search').value = '';
   setState('loading');
   $('toolbar').classList.add('hidden');
+  $('folder-summary').classList.add('hidden');
   try {
     const data = await api(`/api/files?path=${encodeURIComponent(path)}`);
     state.path = data.path;
@@ -206,7 +214,11 @@ function renderList(entries) {
     return;
   }
   setState('file-table');
+  $('folder-summary').classList.remove('hidden');
 
+  // Folder sizes are filled in lazily (see fillFolderSizes) so the listing
+  // appears instantly; collect each folder's size cell here, keyed by path.
+  const dirTargets = {};
   for (const entry of entries) {
     const tr = document.createElement('tr');
     tr.dataset.name = entry.name.toLowerCase();
@@ -225,7 +237,14 @@ function renderList(entries) {
 
     const sizeTd = document.createElement('td');
     sizeTd.className = 'col-size';
-    sizeTd.textContent = entry.type === 'dir' ? '—' : formatSize(entry.size);
+    if (entry.type === 'dir') {
+      sizeTd.textContent = '…';
+      sizeTd.classList.add('size-pending');
+      sizeTd.title = '正在计算文件夹大小…';
+      dirTargets[entry.path] = sizeTd;
+    } else {
+      sizeTd.textContent = formatSize(entry.size);
+    }
 
     const dateTd = document.createElement('td');
     dateTd.className = 'col-date';
@@ -250,6 +269,75 @@ function renderList(entries) {
     tr.append(nameTd, sizeTd, dateTd, actTd);
     tbody.appendChild(tr);
   }
+
+  // Compute this folder's grand total: known file sizes + lazily-fetched
+  // recursive sizes of its sub-folders.
+  let fileBytes = 0;
+  for (const e of entries) if (e.type === 'file') fileBytes += e.size || 0;
+  const count = entries.length;
+  const seq = ++sizeLoadSeq;
+  updateFolderSummary(count, fileBytes, true, false);
+  fillFolderSizes(dirTargets, (dirTotal, complete) => {
+    if (seq !== sizeLoadSeq) return; // a newer navigation replaced this view
+    updateFolderSummary(count, fileBytes + dirTotal, complete, true);
+  });
+}
+
+// Fetch recursive folder sizes for the given { path: element } targets and
+// write the formatted size into each element. Calls onTotal(totalBytes,
+// complete) once done — complete is false if any folder couldn't be sized.
+async function fillFolderSizes(targets, onTotal) {
+  // Cancel any folder-size request still running for a previous view so quick
+  // navigation doesn't stack recursive folder walks on the (possibly SMB) share.
+  if (sizeAbort) sizeAbort.abort();
+  const paths = Object.keys(targets);
+  if (paths.length === 0) {
+    sizeAbort = null;
+    if (onTotal) onTotal(0, true);
+    return;
+  }
+  const controller = new AbortController();
+  sizeAbort = controller;
+  let sizes = {};
+  try {
+    const data = await api('/api/folder-sizes', {
+      method: 'POST',
+      body: JSON.stringify({ paths: paths }),
+      signal: controller.signal,
+    });
+    sizes = data.sizes || {};
+  } catch (err) {
+    // A newer view aborted this request — it owns the display now, so stop.
+    if (err && err.name === 'AbortError') return;
+    // Otherwise leave placeholders; mark every folder unknown below.
+  }
+  let total = 0;
+  let complete = true;
+  for (const p of paths) {
+    const cell = targets[p];
+    const bytes = sizes[p];
+    cell.classList.remove('size-pending');
+    cell.removeAttribute('title');
+    if (bytes === undefined || bytes === null) {
+      cell.textContent = '—';
+      complete = false;
+    } else {
+      cell.textContent = formatSize(bytes);
+      total += bytes;
+    }
+  }
+  if (onTotal) onTotal(total, complete);
+}
+
+function updateFolderSummary(count, bytes, complete, done) {
+  const elx = $('folder-summary');
+  if (!done) {
+    elx.textContent = `共 ${count} 个项目，正在计算大小…`;
+    return;
+  }
+  elx.textContent = complete
+    ? `共 ${count} 个项目，合计 ${formatSize(bytes)}`
+    : `共 ${count} 个项目，合计约 ${formatSize(bytes)}（部分项目无法读取）`;
 }
 
 // Synology-style home: render the user's folders grouped into drive sections
@@ -257,12 +345,15 @@ function renderList(entries) {
 function renderDrives(sections) {
   const home = $('drive-home');
   home.innerHTML = '';
+  $('folder-summary').classList.add('hidden');
+  ++sizeLoadSeq; // invalidate any pending size load from a previous listing
   const total = (sections || []).reduce((n, s) => n + s.entries.length, 0);
   if (total === 0) {
     // No folders at all: restricted account that hasn't been granted access yet.
     setState('no-access');
     return;
   }
+  const driveTargets = {};
   for (const section of sections) {
     if (!section.entries.length) continue;
     const head = el('div', { className: 'drive-head' },
@@ -278,9 +369,11 @@ function renderDrives(sections) {
         el('span', { className: 'drive-card-icon', textContent: '📁' }),
         el('span', { className: 'drive-card-name', textContent: entry.name })
       );
-      const meta = el('span', { className: 'drive-card-meta' });
-      meta.textContent = entry.mtime ? formatDate(entry.mtime) : '';
-      card.append(meta);
+      const sizeSpan = el('span', { className: 'drive-card-size size-pending', textContent: '…' });
+      driveTargets[entry.path] = sizeSpan;
+      const dateSpan = el('span', { className: 'drive-card-date',
+        textContent: entry.mtime ? formatDate(entry.mtime) : '' });
+      card.append(el('span', { className: 'drive-card-meta' }, sizeSpan, dateSpan));
       if (entry.write) {
         card.append(el('span', { className: 'drive-card-badge', textContent: '可管理' }));
       }
@@ -290,6 +383,7 @@ function renderDrives(sections) {
     home.append(el('section', { className: 'drive-section' }, head, grid));
   }
   setState('drive-home');
+  fillFolderSizes(driveTargets); // fill each drive card's size lazily
 }
 
 // ---------- Write operations in the file browser ----------

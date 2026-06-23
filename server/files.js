@@ -7,6 +7,7 @@ import { requireAuth } from './auth.js';
 import { findUser, effectiveRoots, effectiveWriteRoots, driveSections } from './users.js';
 import { normRoot } from './paths.js';
 import { logAction } from './audit.js';
+import { dirSize } from './usage.js';
 
 export const filesRouter = express.Router();
 filesRouter.use(requireAuth);
@@ -32,6 +33,24 @@ function isAllowed(relPath, roots) {
   if (hasFullAccess(roots)) return true;
   const p = normRoot(relPath);
   return roots.some((r) => p === r || p.startsWith(r + '/'));
+}
+
+// Run an async mapper over items with a bounded number in flight, so a folder
+// with many sub-folders doesn't spawn hundreds of concurrent recursive walks
+// against the (possibly remote/SMB) share. Preserves input order.
+async function mapWithConcurrency(items, limit, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i], i);
+    }
+  }
+  const workers = [];
+  for (let i = 0; i < Math.min(limit, items.length); i++) workers.push(worker());
+  await Promise.all(workers);
+  return results;
 }
 
 // ---- Path resolution (containment guard) --------------------------------
@@ -230,6 +249,51 @@ filesRouter.get('/files', async (req, res) => {
     console.error('[files] list error:', e);
     res.status(500).json({ error: '无法读取该文件夹。' });
   }
+});
+
+// POST /api/folder-sizes  { paths: ["/a", "/b"] }  -> recursive total bytes per
+// folder, so the UI can show the size of a folder's contents. Each path is
+// canonicalized and permission-checked exactly like a listing; a path the user
+// may not read, that is missing, or that is not a directory maps to null.
+// Read-only and side-effect free (POST is only used to carry the path list).
+const MAX_SIZE_PATHS = 500; // safety cap on folders sized in one request
+filesRouter.post('/folder-sizes', async (req, res) => {
+  const roots = rootsFor(req.user);
+  const body = req.body || {};
+  const requested = Array.isArray(body.paths) ? body.paths.slice(0, MAX_SIZE_PATHS) : [];
+
+  // If the client navigates away (the frontend aborts the request), stop kicking
+  // off further folder walks instead of running them all to completion. Listen on
+  // the RESPONSE: res 'close' before the response finished == client disconnected.
+  // (req 'close' is unreliable — it also fires once the request body is read.)
+  let aborted = false;
+  res.on('close', () => { if (!res.writableEnded) aborted = true; });
+
+  const computed = await mapWithConcurrency(requested, 6, async (p) => {
+    if (aborted) return null;
+    // Canonicalize FIRST, then check read permission on the resolved path
+    // (same order as /files — never trust the raw string).
+    let abs;
+    try {
+      abs = resolveSafe(p);
+    } catch {
+      return null; // outside the share
+    }
+    const rel = toRelative(abs);
+    if (!isAllowed(rel, roots)) return null;
+    try {
+      const stat = await fsp.stat(abs);
+      if (!stat.isDirectory()) return null;
+      return { rel, bytes: await dirSize(abs) };
+    } catch {
+      return null; // missing / unreadable
+    }
+  });
+
+  if (aborted) return; // client gone — nothing to send
+  const sizes = {};
+  for (const r of computed) if (r) sizes[r.rel] = r.bytes;
+  res.json({ sizes });
 });
 
 // GET /api/download?path=/sub/file.pdf  -> streams the file as an attachment
