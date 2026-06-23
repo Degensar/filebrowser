@@ -8,6 +8,7 @@ import { findUser, effectiveRoots, effectiveWriteRoots, driveSections } from './
 import { normRoot } from './paths.js';
 import { logAction } from './audit.js';
 import { dirSize } from './usage.js';
+import { zipFolder } from './zip.js';
 
 export const filesRouter = express.Router();
 filesRouter.use(requireAuth);
@@ -341,6 +342,58 @@ filesRouter.get('/download', async (req, res) => {
   }
 });
 
+// GET /api/download-folder?path=/sub/folder  -> streams the folder as a .zip
+filesRouter.get('/download-folder', async (req, res) => {
+  const roots = rootsFor(req.user);
+
+  // Canonicalize before the permission check (see note in /files).
+  let abs;
+  try {
+    abs = resolveSafe(req.query.path || '/');
+  } catch (e) {
+    return res.status(403).json({ error: e.message });
+  }
+  const rel = toRelative(abs);
+  if (rel === '/') {
+    return res.status(400).json({ error: '不能打包下载整个共享根目录。' });
+  }
+  if (!isAllowed(rel, roots)) {
+    return res.status(403).json({ error: '您没有下载该文件夹的权限。' });
+  }
+
+  let stat;
+  try {
+    stat = await fsp.stat(abs);
+  } catch (e) {
+    if (e.code === 'ENOENT') return res.status(404).json({ error: '未找到该文件夹。' });
+    console.error('[files] zip stat error:', e);
+    return res.status(500).json({ error: '无法读取该文件夹。' });
+  }
+  if (!stat.isDirectory()) {
+    return res.status(400).json({ error: '该路径不是文件夹（请用普通下载）。' });
+  }
+
+  const baseName = path.basename(abs) || 'folder';
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader(
+    'Content-Disposition',
+    `attachment; filename*=UTF-8''${encodeURIComponent(baseName)}.zip`
+  );
+  logAction({ user: req.user, action: 'download', path: rel, bytes: 0 });
+
+  const zip = zipFolder(abs, baseName);
+  // If the client aborts, tear down the walk so it stops reading the share.
+  res.on('close', () => {
+    if (!res.writableEnded) zip.destroy();
+  });
+  zip.on('error', (err) => {
+    console.error('[files] zip stream error:', err);
+    if (!res.headersSent) res.status(500).end('打包下载失败。');
+    else res.destroy();
+  });
+  zip.pipe(res);
+});
+
 // ---- Write operations (upload / replace / delete) -----------------------
 
 // Resolve + authorize a write target. Returns the absolute path, or sends an
@@ -371,8 +424,14 @@ filesRouter.put('/file', async (req, res) => {
   const abs = authorizeWrite(req, res);
   if (!abs) return;
   try {
-    // Parent folder must already exist and be a directory.
     const parent = path.dirname(abs);
+    // Folder uploads (?mkdirs=1) create the missing sub-folder chain. The whole
+    // path was already write-permission-checked, and the parent is an ancestor
+    // inside that same allowed root, so creating it stays within the user's
+    // grant. Single-file uploads keep the strict "parent must exist" guard.
+    if (req.query.mkdirs === '1') {
+      await fsp.mkdir(parent, { recursive: true });
+    }
     const pstat = await fsp.stat(parent).catch(() => null);
     if (!pstat || !pstat.isDirectory()) {
       return res.status(400).json({ error: '目标文件夹不存在。' });

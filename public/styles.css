@@ -571,6 +571,43 @@ td.col-action > * {
   margin: 0 2px 10px;
 }
 
+/* ---------- Folder download bar ---------- */
+.folder-actions {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+/* ---------- Drag-and-drop upload overlay ---------- */
+.app-view {
+  position: relative;
+}
+.drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(37, 99, 235, 0.08);
+  pointer-events: none;
+}
+.drop-overlay-box {
+  border: 2px dashed var(--accent);
+  background: var(--surface);
+  border-radius: 16px;
+  padding: 32px 44px;
+  text-align: center;
+  color: var(--accent);
+  font-size: 16px;
+  font-weight: 600;
+  box-shadow: 0 10px 40px rgba(16, 24, 40, 0.12);
+}
+.drop-overlay-icon {
+  font-size: 40px;
+  margin-bottom: 8px;
+}
+
 /* ---------- Edit capability badges / toggles ---------- */
 .edit-badge {
   display: inline-block;

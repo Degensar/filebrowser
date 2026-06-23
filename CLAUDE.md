@@ -93,6 +93,30 @@ a listing (so a user can never size a folder they can't read). The file browser 
 totals), and drive cards on the home show each drive's size. Sizes are **uncached** (always
 fresh, matching `usage.js`); a stale response from a previous view is ignored via `sizeLoadSeq`.
 
+## Folder download / upload
+
+- **Download a whole folder as ZIP:** `GET /api/download-folder?path=` streams a `.zip` of the
+  folder's recursive contents. `server/zip.js` is a **dependency-free streaming ZIP writer**
+  (Node core `zlib` deflate) — chosen over `archiver` to keep the app pure-JS / offline / Node-16.
+  It uses data descriptors (so it can stream without buffering whole files) and emits **ZIP64**
+  per-entry / at the archive level when sizes, offsets, or the entry count overflow 32 bits, so
+  folders over 4GB / 65535 files still produce a valid archive. **Symlinks are skipped** (no
+  loops, can't escape the share). The route canonicalizes + read-permission-checks the path like
+  a listing and **refuses the share root** (`/`). Aborting the client request destroys the zip
+  stream so the walk stops touching the share. UI: a **⬇ 下载** link on every folder row, and a
+  **⬇ 下载此文件夹（ZIP）** button on any real-folder listing (read access is enough).
+- **Upload a whole folder:** the UI uses a `webkitdirectory` file input (**⬆ 上传文件夹**); the
+  browser enumerates the folder's files with `file.webkitRelativePath`, and `uploadFiles(...,
+  {preservePaths:true})` PUTs each one to `<current>/<relativePath>` with `?mkdirs=1` so the
+  server recreates the sub-folder structure. Reuses the existing streamed-PUT path; no new
+  dependency. Works on the target old-Firefox ESR.
+- **Drag-and-drop upload:** dropping files/folders onto the file browser uploads into the
+  current folder. `setupDragAndDrop()` (app.js) shows a `#drop-overlay` while dragging (only
+  when `state.canWrite`), captures dropped entries via `DataTransferItem.webkitGetAsEntry()`,
+  and `walkEntry()` recurses `FileSystemDirectoryReader` to flatten a dropped folder into
+  `{file, path}` items fed to the shared `uploadItems()` (same PUT+`mkdirs` path as above).
+  Window-level `dragover`/`drop` are prevented so a stray drop never navigates the page.
+
 ## Delegated department management (department heads)
 
 A **department head** (主管 — a non-admin in `role.leaders`) can manage access *for the
@@ -182,6 +206,7 @@ server/
   admin.js   admin-only API: users + roles CRUD
   dept.js    delegated department management API for department heads (主管)
   files.js   listing + download, per-user permission checks, traversal guard
+  zip.js     dependency-free streaming ZIP writer (folder download, ZIP64)
 scripts/
   manage-users.js   `npm run user ...`  (accounts, role assignment, extra folders)
   manage-roles.js   `npm run role ...`  (create/edit/delete roles)
@@ -192,11 +217,15 @@ public/      index.html + styles.css + app.js  (login/register, browser, admin p
 
 - `POST /api/auth/{login,register,logout}`, `GET /api/auth/me`
 - `GET /api/files?path=` (returns `canWrite` for the folder), `GET /api/download?path=`
+- `GET /api/download-folder?path=` — streams the folder (recursively) as a `.zip`
+  (read-permission checked; refuses the share root); see *Folder download / upload*.
 - `POST /api/folder-sizes` (`{paths:[...]}`) — recursive total bytes per folder, used by the
   UI to show folder content sizes. Read-only; each path is canonicalized + read-permission
   checked like a listing (unauthorized/missing/non-dir → `null`); see *Folder content sizes*.
 - Write (auth + write-permission on target):
-  - `PUT /api/file?path=` — create/overwrite a file (raw body = bytes; upload & replace)
+  - `PUT /api/file?path=` — create/overwrite a file (raw body = bytes; upload & replace).
+    With `?mkdirs=1` it also creates the missing parent sub-folder chain (used by folder
+    upload); without it, the parent must already exist.
   - `DELETE /api/file?path=` — delete a file or folder (recursive for folders)
   - `POST /api/folder?path=` — create a folder
 - Admin (admin only):

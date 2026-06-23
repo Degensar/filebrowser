@@ -55,9 +55,14 @@
       <main class="content">
         <div id="toolbar" class="toolbar hidden">
           <input id="file-input" type="file" multiple hidden />
+          <input id="folder-input" type="file" webkitdirectory multiple hidden />
           <button id="upload-btn" class="btn-primary">⬆ 上传文件</button>
+          <button id="upload-folder-btn" class="btn-ghost">⬆ 上传文件夹</button>
           <button id="mkdir-btn" class="btn-ghost">＋ 新建文件夹</button>
           <span id="upload-status" class="upload-status"></span>
+        </div>
+        <div id="folder-actions" class="folder-actions hidden">
+          <button id="download-folder-btn" class="btn-ghost">⬇ 下载此文件夹（ZIP）</button>
         </div>
         <div id="loading" class="state hidden">加载中…</div>
         <div id="error" class="state error hidden"></div>
@@ -83,6 +88,12 @@
           <tbody id="file-list"></tbody>
         </table>
       </main>
+      <div id="drop-overlay" class="drop-overlay hidden">
+        <div class="drop-overlay-box">
+          <div class="drop-overlay-icon">⬆</div>
+          <div>拖放文件或文件夹到此处，上传到当前文件夹</div>
+        </div>
+      </div>
     </div>
 
     <!-- 管理后台 -->

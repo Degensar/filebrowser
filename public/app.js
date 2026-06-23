@@ -138,6 +138,7 @@ async function navigate(path) {
   setState('loading');
   $('toolbar').classList.add('hidden');
   $('folder-summary').classList.add('hidden');
+  $('folder-actions').classList.add('hidden');
   try {
     const data = await api(`/api/files?path=${encodeURIComponent(path)}`);
     state.path = data.path;
@@ -203,6 +204,9 @@ function renderBreadcrumb(crumbs) {
 function renderList(entries) {
   const tbody = $('file-list');
   tbody.innerHTML = '';
+  // The "download this folder" button is available on any real folder (read
+  // access is enough), but never at the virtual home root.
+  $('folder-actions').classList.toggle('hidden', state.path === '/');
   if (entries.length === 0) {
     // At home with no entries + restricted account = no access granted yet.
     if (state.path === '/' && state.account && !state.account.isAdmin && !state.account.hasAccess) {
@@ -257,6 +261,13 @@ function renderList(entries) {
       a.className = 'download-link';
       a.href = `/api/download?path=${encodeURIComponent(entry.path)}`;
       a.innerHTML = '⬇ 下载';
+      actTd.appendChild(a);
+    } else {
+      // Folders download as a .zip of their contents.
+      const a = document.createElement('a');
+      a.className = 'download-link';
+      a.href = `/api/download-folder?path=${encodeURIComponent(entry.path)}`;
+      a.textContent = '⬇ 下载';
       actTd.appendChild(a);
     }
     if (state.canWrite) {
@@ -393,28 +404,179 @@ $('file-input').addEventListener('change', async (e) => {
   e.target.value = ''; // allow re-selecting the same file later
   if (files.length) await uploadFiles(files);
 });
+$('upload-folder-btn').addEventListener('click', () => $('folder-input').click());
+$('folder-input').addEventListener('change', async (e) => {
+  const files = [...e.target.files];
+  e.target.value = '';
+  if (files.length) await uploadFiles(files, { preservePaths: true });
+});
 $('mkdir-btn').addEventListener('click', createFolder);
+$('download-folder-btn').addEventListener('click', () => {
+  if (state.path && state.path !== '/') {
+    window.location.href = `/api/download-folder?path=${encodeURIComponent(state.path)}`;
+  }
+});
 
-async function uploadFiles(files) {
+// ---------- Drag-and-drop upload ----------
+// Files/folders dropped onto the file browser upload into the current folder.
+// Only active where the user may write (a real folder listing with canWrite).
+function dragHasFiles(e) {
+  const dt = e.dataTransfer;
+  if (!dt || !dt.types) return false;
+  for (let i = 0; i < dt.types.length; i++) if (dt.types[i] === 'Files') return true;
+  return false;
+}
+function canDropHere() {
+  return !!state.canWrite && !$('app-view').classList.contains('hidden');
+}
+
+function setupDragAndDrop() {
+  const view = $('app-view');
+  const overlay = $('drop-overlay');
+  let depth = 0;
+  const hide = () => {
+    depth = 0;
+    overlay.classList.add('hidden');
+  };
+
+  view.addEventListener('dragenter', (e) => {
+    if (!dragHasFiles(e)) return;
+    e.preventDefault();
+    if (!canDropHere()) return;
+    depth++;
+    overlay.classList.remove('hidden');
+  });
+  view.addEventListener('dragover', (e) => {
+    if (!dragHasFiles(e)) return;
+    e.preventDefault();
+    if (canDropHere()) e.dataTransfer.dropEffect = 'copy';
+  });
+  view.addEventListener('dragleave', (e) => {
+    if (!dragHasFiles(e)) return;
+    depth--;
+    if (depth <= 0) hide();
+  });
+  view.addEventListener('drop', (e) => {
+    if (!dragHasFiles(e)) return;
+    e.preventDefault();
+    hide();
+    if (!canDropHere()) return;
+    // The DataTransfer is only valid during this event, so capture entries now.
+    const dt = e.dataTransfer;
+    const entries = [];
+    const looseFiles = [];
+    if (dt.items && dt.items.length) {
+      for (let i = 0; i < dt.items.length; i++) {
+        const it = dt.items[i];
+        const entry = it.webkitGetAsEntry ? it.webkitGetAsEntry() : null;
+        if (entry) entries.push(entry);
+        else if (it.getAsFile) {
+          const f = it.getAsFile();
+          if (f) looseFiles.push(f);
+        }
+      }
+    } else if (dt.files) {
+      for (let i = 0; i < dt.files.length; i++) looseFiles.push(dt.files[i]);
+    }
+    collectAndUpload(entries, looseFiles);
+  });
+
+  // Stop the browser from navigating to a file dropped outside the drop zone.
+  window.addEventListener('dragover', (e) => {
+    if (dragHasFiles(e)) e.preventDefault();
+  });
+  window.addEventListener('drop', (e) => {
+    if (dragHasFiles(e)) e.preventDefault();
+  });
+}
+
+async function collectAndUpload(entries, looseFiles) {
+  const out = [];
+  for (const f of looseFiles) out.push({ file: f, path: f.name });
+  for (const entry of entries) await walkEntry(entry, '', out);
+  if (out.length) await uploadItems(out);
+}
+
+// Recursively turn a dropped FileSystemEntry into { file, path } items,
+// preserving sub-folder structure (path prefix). webkitGetAsEntry /
+// FileSystemDirectoryReader are supported by the target Firefox ESR.
+function walkEntry(entry, prefix, out) {
+  return new Promise((resolve) => {
+    if (entry.isFile) {
+      entry.file(
+        (file) => {
+          out.push({ file: file, path: prefix + entry.name });
+          resolve();
+        },
+        () => resolve()
+      );
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      const all = [];
+      const readBatch = () => {
+        reader.readEntries(
+          (batch) => {
+            if (!batch.length) {
+              // readEntries returns in chunks; an empty batch means done.
+              let chain = Promise.resolve();
+              for (const child of all) {
+                const c = child;
+                chain = chain.then(() => walkEntry(c, prefix + entry.name + '/', out));
+              }
+              chain.then(resolve);
+            } else {
+              for (const b of batch) all.push(b);
+              readBatch();
+            }
+          },
+          () => resolve()
+        );
+      };
+      readBatch();
+    } else {
+      resolve();
+    }
+  });
+}
+
+// Upload a list of { file, path } items, where path is the destination relative
+// to the current folder (may contain "/" for sub-folders). Shared by the file
+// picker, the folder picker, and drag-and-drop. Paths with a "/" ask the server
+// to create the missing sub-folder chain (?mkdirs=1).
+async function uploadItems(items) {
+  if (!items.length) return;
   const status = $('upload-status');
   let done = 0;
-  for (const file of files) {
-    status.textContent = `正在上传 ${file.name}（${++done}/${files.length}）…`;
-    const dest = joinPath(state.path, file.name);
+  for (const it of items) {
+    const rel = it.path || it.file.name;
+    status.textContent = `正在上传 ${rel}（${++done}/${items.length}）…`;
+    const dest = joinPath(state.path, rel);
+    const url = `/api/file?path=${encodeURIComponent(dest)}` + (rel.indexOf('/') !== -1 ? '&mkdirs=1' : '');
     try {
-      await fetch(`/api/file?path=${encodeURIComponent(dest)}`, {
+      await fetch(url, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/octet-stream' },
-        body: file,
+        body: it.file,
       }).then(checkOk);
     } catch (err) {
       status.textContent = '';
-      alert(`上传“${file.name}”失败：${err.message}`);
+      alert(`上传“${rel}”失败：${err.message}`);
       break;
     }
   }
   status.textContent = done ? `已上传 ${done} 个文件。` : '';
   await navigate(state.path);
+}
+
+function uploadFiles(files, opts) {
+  // preservePaths: keep each file's sub-folder structure (folder upload), via the
+  // browser's webkitRelativePath. Otherwise upload flat by file name.
+  const preservePaths = !!(opts && opts.preservePaths);
+  const items = [];
+  for (const file of files) {
+    items.push({ file: file, path: preservePaths && file.webkitRelativePath ? file.webkitRelativePath : file.name });
+  }
+  return uploadItems(items);
 }
 
 // Replace one existing file with a newly chosen file (overwrites in place).
@@ -1384,6 +1546,7 @@ function iconForFile(name) {
 // ---------- Boot ----------
 (async function init() {
   setAuthMode('login');
+  setupDragAndDrop();
   try {
     const me = await api('/api/auth/me');
     state.account = me;
