@@ -11,7 +11,7 @@
     />
   </head>
   <body>
-    <!-- 登录 / 注册界面 -->
+    <!-- 登录 / 注册界面 (markup unchanged) -->
     <div id="login-view" class="login-view hidden">
       <form id="login-form" class="login-card">
         <div class="login-logo">📁</div>
@@ -34,130 +34,171 @@
       </form>
     </div>
 
-    <!-- 文件浏览主界面 -->
-    <div id="app-view" class="app-view hidden">
-      <header class="topbar">
-        <div class="brand"><span class="brand-icon">📁</span> 公司文件</div>
-        <div class="topbar-right">
-          <div class="search">
-            <input id="search" type="search" placeholder="在当前文件夹中筛选文件…" />
-          </div>
-          <button id="myfolder-btn" class="btn-ghost hidden">📁 我的文件夹</button>
-          <button id="dept-btn" class="btn-ghost hidden">👑 部门管理</button>
-          <button id="admin-btn" class="btn-primary hidden">管理后台</button>
-          <span id="who" class="who"></span>
-          <button id="logout-btn" class="btn-ghost">退出登录</button>
+    <!-- ============================================================
+         应用外壳：常驻侧边栏 + 可切换的文件 / 管理视图
+         侧边栏里的按钮沿用原有 ID，app.js 无需改动。
+         ============================================================ -->
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="sidebar-brand">
+          <span class="sidebar-logo">📁</span>
+          <span class="sidebar-brand-text">
+            <strong>公司文件</strong>
+            <span>文件共享中心</span>
+          </span>
         </div>
-      </header>
 
-      <nav class="breadcrumb" id="breadcrumb"></nav>
+        <nav class="sidebar-nav">
+          <!-- 原 #admin-back-btn：showApp() + navigate('/')，作为“全部文件” -->
+          <button id="admin-back-btn" class="nav-item nav-files">
+            <span class="icon">🗂️</span><span>全部文件</span>
+          </button>
+          <!-- 原 #myfolder-btn：由 showApp() 控制显隐 -->
+          <button id="myfolder-btn" class="nav-item hidden">
+            <span class="icon">📁</span><span>我的文件夹</span>
+          </button>
+          <!-- 原 #dept-btn：由 showApp() 控制显隐 -->
+          <button id="dept-btn" class="nav-item hidden">
+            <span class="icon">👑</span><span>部门管理</span>
+          </button>
 
-      <main class="content">
-        <div id="toolbar" class="toolbar hidden">
-          <input id="file-input" type="file" multiple hidden />
-          <input id="folder-input" type="file" webkitdirectory multiple hidden />
-          <button id="upload-btn" class="btn-primary">⬆ 上传文件</button>
-          <button id="upload-folder-btn" class="btn-ghost">⬆ 上传文件夹</button>
-          <button id="mkdir-btn" class="btn-ghost">＋ 新建文件夹</button>
-          <span id="upload-status" class="upload-status"></span>
+          <div class="nav-sep">管理</div>
+          <!-- 原 #admin-btn：由 showApp() 控制显隐 -->
+          <button id="admin-btn" class="nav-item hidden">
+            <span class="icon">🛠️</span><span>管理后台</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-spacer"></div>
+
+        <div class="sidebar-footer">
+          <div class="sidebar-user">
+            <span class="sidebar-avatar">👤</span>
+            <span id="who" class="who"></span>
+          </div>
+          <button id="logout-btn" class="nav-logout">退出登录</button>
         </div>
-        <div id="folder-actions" class="folder-actions hidden">
-          <button id="download-folder-btn" class="btn-ghost">⬇ 下载此文件夹（ZIP）</button>
-        </div>
-        <div id="loading" class="state hidden">加载中…</div>
-        <div id="error" class="state error hidden"></div>
-        <div id="empty" class="state hidden">此文件夹为空。</div>
-        <div id="no-access" class="state hidden">
-          <div class="no-access-card">
-            <div class="no-access-icon">🔒</div>
-            <h2>暂无可访问的文件夹</h2>
-            <p>您的账号尚未被授予任何文件夹的访问权限，请联系管理员开通。</p>
+      </aside>
+
+      <div class="shell-main">
+        <!-- 文件浏览主界面 -->
+        <div id="app-view" class="app-view hidden">
+          <header class="topbar">
+            <nav class="breadcrumb" id="breadcrumb"></nav>
+            <div class="topbar-right">
+              <div class="search">
+                <input id="search" type="search" placeholder="在当前文件夹中筛选文件…" />
+              </div>
+            </div>
+          </header>
+
+          <main class="content">
+            <div id="toolbar" class="toolbar hidden">
+              <input id="file-input" type="file" multiple hidden />
+              <input id="folder-input" type="file" webkitdirectory multiple hidden />
+              <button id="upload-btn" class="btn-primary">⬆ 上传文件</button>
+              <button id="upload-folder-btn" class="btn-ghost">⬆ 上传文件夹</button>
+              <button id="mkdir-btn" class="btn-ghost">＋ 新建文件夹</button>
+              <span id="upload-status" class="upload-status"></span>
+            </div>
+            <div id="folder-actions" class="folder-actions hidden">
+              <button id="download-folder-btn" class="btn-ghost">⬇ 下载此文件夹（ZIP）</button>
+            </div>
+            <div id="loading" class="state hidden">加载中…</div>
+            <div id="error" class="state error hidden"></div>
+            <div id="empty" class="state hidden">此文件夹为空。</div>
+            <div id="no-access" class="state hidden">
+              <div class="no-access-card">
+                <div class="no-access-icon">🔒</div>
+                <h2>暂无可访问的文件夹</h2>
+                <p>您的账号尚未被授予任何文件夹的访问权限，请联系管理员开通。</p>
+              </div>
+            </div>
+            <div id="drive-home" class="drive-home hidden"></div>
+            <div id="folder-summary" class="folder-summary hidden"></div>
+            <table id="file-table" class="file-table hidden">
+              <thead>
+                <tr>
+                  <th class="col-name">名称</th>
+                  <th class="col-size">大小</th>
+                  <th class="col-date">修改时间</th>
+                  <th class="col-action"></th>
+                </tr>
+              </thead>
+              <tbody id="file-list"></tbody>
+            </table>
+          </main>
+          <div id="drop-overlay" class="drop-overlay hidden">
+            <div class="drop-overlay-box">
+              <div class="drop-overlay-icon">⬆</div>
+              <div>拖放文件或文件夹到此处，上传到当前文件夹</div>
+            </div>
           </div>
         </div>
-        <div id="drive-home" class="drive-home hidden"></div>
-        <div id="folder-summary" class="folder-summary hidden"></div>
-        <table id="file-table" class="file-table hidden">
-          <thead>
-            <tr>
-              <th class="col-name">名称</th>
-              <th class="col-size">大小</th>
-              <th class="col-date">修改时间</th>
-              <th class="col-action"></th>
-            </tr>
-          </thead>
-          <tbody id="file-list"></tbody>
-        </table>
-      </main>
-      <div id="drop-overlay" class="drop-overlay hidden">
-        <div class="drop-overlay-box">
-          <div class="drop-overlay-icon">⬆</div>
-          <div>拖放文件或文件夹到此处，上传到当前文件夹</div>
+
+        <!-- 管理后台 -->
+        <div id="admin-view" class="app-view hidden">
+          <header class="topbar">
+            <div class="topbar-title">🛠️ 管理后台</div>
+            <div class="topbar-right">
+              <button id="admin-usage-btn" class="btn-ghost">📊 存储用量</button>
+              <button id="admin-activity-btn" class="btn-ghost">🕒 活动统计</button>
+              <button id="admin-audit-btn" class="btn-ghost">📜 审计日志</button>
+            </div>
+          </header>
+          <main class="content">
+            <div id="admin-error" class="state error hidden"></div>
+
+            <!-- 角色管理 -->
+            <section class="admin-section">
+              <div class="section-head">
+                <h2>角色管理</h2>
+                <button id="admin-new-role-btn" class="btn-primary">+ 新建角色</button>
+              </div>
+              <p class="section-desc">
+                角色是一组文件夹的集合。把角色分配给用户后，用户即可访问该角色包含的所有文件夹。
+              </p>
+              <table class="file-table admin-table">
+                <thead>
+                  <tr>
+                    <th class="col-rolename">角色名称</th>
+                    <th>包含的文件夹</th>
+                    <th class="col-admin-actions">操作</th>
+                  </tr>
+                </thead>
+                <tbody id="admin-role-list"></tbody>
+              </table>
+            </section>
+
+            <!-- 用户管理 -->
+            <section class="admin-section">
+              <div class="section-head">
+                <h2>用户管理</h2>
+                <button id="admin-new-btn" class="btn-primary">+ 新建用户</button>
+              </div>
+              <p class="section-desc">
+                每个用户可同时拥有多个角色，并可被额外授予指定的文件夹。最终可访问范围 =
+                所有角色的文件夹 ＋ 额外授予的文件夹。
+              </p>
+              <table class="file-table admin-table">
+                <thead>
+                  <tr>
+                    <th>用户名</th>
+                    <th class="col-role">管理员</th>
+                    <th>角色</th>
+                    <th>有效可访问范围</th>
+                    <th class="col-admin-actions">操作</th>
+                  </tr>
+                </thead>
+                <tbody id="admin-user-list"></tbody>
+              </table>
+            </section>
+          </main>
         </div>
       </div>
     </div>
 
-    <!-- 管理后台 -->
-    <div id="admin-view" class="app-view hidden">
-      <header class="topbar">
-        <div class="brand"><span class="brand-icon">🛠️</span> 管理后台</div>
-        <div class="topbar-right">
-          <button id="admin-usage-btn" class="btn-ghost">📊 存储用量</button>
-          <button id="admin-activity-btn" class="btn-ghost">🕒 活动统计</button>
-          <button id="admin-audit-btn" class="btn-ghost">📜 审计日志</button>
-          <button id="admin-back-btn" class="btn-ghost">返回文件</button>
-        </div>
-      </header>
-      <main class="content">
-        <div id="admin-error" class="state error hidden"></div>
-
-        <!-- 角色管理 -->
-        <section class="admin-section">
-          <div class="section-head">
-            <h2>角色管理</h2>
-            <button id="admin-new-role-btn" class="btn-primary">+ 新建角色</button>
-          </div>
-          <p class="section-desc">
-            角色是一组文件夹的集合。把角色分配给用户后，用户即可访问该角色包含的所有文件夹。
-          </p>
-          <table class="file-table admin-table">
-            <thead>
-              <tr>
-                <th class="col-rolename">角色名称</th>
-                <th>包含的文件夹</th>
-                <th class="col-admin-actions">操作</th>
-              </tr>
-            </thead>
-            <tbody id="admin-role-list"></tbody>
-          </table>
-        </section>
-
-        <!-- 用户管理 -->
-        <section class="admin-section">
-          <div class="section-head">
-            <h2>用户管理</h2>
-            <button id="admin-new-btn" class="btn-primary">+ 新建用户</button>
-          </div>
-          <p class="section-desc">
-            每个用户可同时拥有多个角色，并可被额外授予指定的文件夹。最终可访问范围 =
-            所有角色的文件夹 ＋ 额外授予的文件夹。
-          </p>
-          <table class="file-table admin-table">
-            <thead>
-              <tr>
-                <th>用户名</th>
-                <th class="col-role">管理员</th>
-                <th>角色</th>
-                <th>有效可访问范围</th>
-                <th class="col-admin-actions">操作</th>
-              </tr>
-            </thead>
-            <tbody id="admin-user-list"></tbody>
-          </table>
-        </section>
-      </main>
-    </div>
-
-    <!-- 通用模态框 -->
+    <!-- 通用模态框 (markup unchanged) -->
     <div id="modal-overlay" class="modal-overlay hidden">
       <div class="modal" id="modal">
         <div class="modal-header">
